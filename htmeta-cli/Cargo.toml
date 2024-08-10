@@ -1,0 +1,13 @@
+[package]
+name = "htmeta-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "htmeta"
+path = "src/main.rs"
+
+[dependencies]
+miette = { version = "5.3.0", features = ["fancy"] }
+htmeta = { path="../"}
+kdl = "4.6.0"

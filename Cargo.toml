@@ -1,0 +1,13 @@
+[package]
+name = "htmeta"
+version = "0.1.0"
+edition = "2021"
+authors = ["Diego Augusto <diego@diegovsky.me>"]
+
+[workspace]
+members = ["htmeta-cli"]
+
+[dependencies]
+html-escape = "0.2.13"
+kdl = "4.6.0"
+regex = "1.10.6"
