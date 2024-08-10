@@ -3,6 +3,8 @@ name = "htmeta"
 version = "0.1.0"
 edition = "2021"
 authors = ["Diego Augusto <diego@diegovsky.me>"]
+description = "A KDL dialect for HTML"
+license = "MIT"
 
 [workspace]
 members = ["htmeta-cli"]
