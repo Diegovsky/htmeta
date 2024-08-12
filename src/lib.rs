@@ -84,15 +84,60 @@ macro_rules! re {
 use std::{
     borrow::Cow,
     collections::HashMap,
-    io::{self, Write},
+    io::{self, Write}, rc::Rc,
 };
 
 use kdl::{KdlDocument, KdlNode, KdlValue};
 use regex::Captures;
 
-type Writer<'a> = &'a mut dyn Write;
+pub type Writer<'a> = &'a mut dyn Write;
 type Text<'b> = Cow<'b, str>;
-type EmitResult<T = ()> = io::Result<T>;
+pub type EmitResult<T = ()> = io::Result<T>;
+pub type Plugin = Rc<dyn for<'a, 'b> Fn(&'a HtmlEmitter, &'a Writer<'b>) -> EmitResult<bool>>;
+pub type Indent = usize;
+
+const VOID_TAGS: &[&str] = &[
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
+    "track", "wbr",
+];
+
+/// A builder for [`HtmlEmitter`]s.
+#[derive(Clone, Default)]
+pub struct HtmlEmitterBuilder {
+    indent: Indent,
+    plugins: Vec<Plugin>,
+}
+
+impl HtmlEmitterBuilder {
+    /// Returns a new [`Self`] instance with a default indentation value of 4.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the indentation amount
+    pub fn indent(mut self, indent: Indent) -> Self {
+        self.indent = indent;
+        self
+    }
+
+    /// Registers plugins for all instances of this builder.
+    pub fn add_plugins<P>(mut self, plugins: P) -> Self where P: IntoIterator<Item = Plugin> {
+        self.plugins.extend(plugins);
+        self
+    }
+
+    /// Creates a new [`HtmlEmitter`]. You should re-use this builder to create emitters
+    /// efficiently.
+    pub fn build<'a>(&mut self, node: &'a KdlDocument) -> HtmlEmitter<'a> {
+        HtmlEmitter {
+            node,
+            current_level: 0,
+            indent: self.indent,
+            plugins: self.plugins.clone(),
+            vars: Default::default(),
+        }
+    }
+}
 
 /// An `HTML` emitter for `htmeta`.
 ///
@@ -101,40 +146,39 @@ type EmitResult<T = ()> = io::Result<T>;
 /// let doc = KdlDocument::from_str(r#"html { body { h1 { text "Title" }}}"#).unwrap();
 ///
 /// // Creates an emitter with an indentation level of 4.
-/// let emitter = HtmlEmitter::new(&doc, 4);
+/// let emitter = HtmlEmitter::builder().indent(4).build(&doc);
+///
+/// // Emits html to the terminal.
+/// emitter.emit(std::io::stdout()).unwrap();
 /// ```
 #[derive(Clone)]
 pub struct HtmlEmitter<'a> {
-    node: &'a KdlDocument,
-    indent: usize,
-    current_level: usize,
-    vars: HashMap<&'a str, Text<'a>>,
+    pub node: &'a KdlDocument,
+    pub indent: Indent,
+    pub current_level: Indent,
+    pub vars: HashMap<&'a str, Text<'a>>,
+    plugins: Vec<Plugin>,
 }
-
-fn get_attribute<'a>(node: &'a KdlNode, name: &str) -> Option<&'a KdlValue> {
-    if let Some(entry) = node.get(name) {
-        return Some(entry.value());
-    }
-    node.children().and_then(|node| node.get_arg(name))
-}
-
-const VOID_TAGS: &[&str] = &[
-    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
-    "track", "wbr",
-];
 
 impl<'a> HtmlEmitter<'a> {
+    #[deprecated = "Use the builder interface [`Self::builder()`]"]
     /// Creates a new [`HtmlEmitter`] with an indentation level of `indent`.
+    ///
+    /// This is deprecated. Use [`Self::builder`] instead.
     pub fn new(node: &'a KdlDocument, indent: usize) -> Self {
-        Self {
-            node,
-            indent,
-            current_level: 0,
-            vars: Default::default(),
-        }
+        Self::builder().indent(indent).build(node)
     }
 
-    fn subemitter(&self, node: &'a KdlDocument) -> Self {
+    /// A convenience method that just calls [`HtmlEmitterBuilder::new`].
+    ///
+    /// Check out that type's documentation for uses!
+    pub fn builder() -> HtmlEmitterBuilder {
+        HtmlEmitterBuilder::new()
+    }
+
+    /// Returns an [`HtmlEmitter`] with a copy of `self`'s variables and one indentation level
+    /// deeper. This emitter should be uses to translate a child of `self`.
+    pub fn subemitter(&self, node: &'a KdlDocument) -> Self {
         Self {
             current_level: self.current_level + 1,
             node,
@@ -142,11 +186,23 @@ impl<'a> HtmlEmitter<'a> {
         }
     }
 
-    fn indent(&mut self) -> String {
+    /// Convenience function that returns a new [`String`] containing the current indentation
+    /// level's worth of spaces.
+    ///
+    /// # Example
+    /// ```rust
+    /// let emitter = HtmlEmitter::builder().indent(4).new();
+    /// assert_eq!(emitter.indent(), "");
+    ///
+    /// // A level of indentation deep:
+    /// assert_eq!(emitter.subemitter().indent(), "    ");
+    /// ```
+    pub fn indent(&self) -> String {
         " ".repeat(self.current_level * self.indent)
     }
 
-    fn expand_string<'b>(&self, text: &'b str) -> Text<'b> {
+    /// Replaces all occurences of variables inside `text` and returns a new string.
+    pub fn expand_string<'b>(&self, text: &'b str) -> Text<'b> {
         re!(VAR, r"(\$\w+)");
         VAR.replace(text, |captures: &Captures| {
             self.vars
@@ -156,19 +212,23 @@ impl<'a> HtmlEmitter<'a> {
         })
     }
 
-    fn expand_value<'b>(&self, value: &'b KdlValue) -> Text<'b> {
+    /// Converts the `value`'s [`String`] representation and replaces any variables found within.
+    /// This is a convenient wrapper around [`Self::expand_string`].
+    pub fn expand_value<'b>(&self, value: &'b KdlValue) -> Text<'b> {
         match value {
             KdlValue::RawString(content) | KdlValue::String(content) => self.expand_string(content),
             _ => todo!(),
         }
     }
 
-    fn emit_tag(
+    /// Emits a compound `HTML` tag named `name`, with `indent` as indentation, using `node` for
+    /// properties and children.
+    pub fn emit_tag(
         &mut self,
         node: &'a KdlNode,
         name: &str,
         indent: &str,
-        writer: &mut Writer<'a>,
+        writer: Writer
     ) -> EmitResult {
         let is_void = VOID_TAGS.contains(&name);
 
@@ -199,6 +259,15 @@ impl<'a> HtmlEmitter<'a> {
         Ok(())
     }
 
+    fn call_plugin(&self, mut writer: Writer) -> EmitResult<bool> {
+        for plug in &self.plugins {
+            if (*plug)(self, &mut writer)? {
+                return Ok(true)
+            }
+        }
+        Ok(false)
+    }
+
     /// Emits the corresponding `HTML` into the `writer`. The emitter can be re-used after this.
     ///
     /// # Examples:
@@ -212,11 +281,16 @@ impl<'a> HtmlEmitter<'a> {
     /// let file = std::fs::create("index.html").unwrap();
     /// emitter.emit(&mut file).unwrap();
     /// ```
-    pub fn emit(&mut self, mut writer: Writer<'a>) -> EmitResult {
+    pub fn emit(&mut self, writer: Writer<'a>) -> EmitResult {
         let indent = self.indent();
 
         for node in self.node.nodes() {
             let name = node.name().value();
+
+            // Plugin shenanigans
+            if self.call_plugin(writer)? {
+                continue
+            }
 
             // variable node
             if name.starts_with("$")
@@ -239,7 +313,8 @@ impl<'a> HtmlEmitter<'a> {
                 continue;
             }
 
-            self.emit_tag(node, name, &indent, &mut writer)?
+            // Compound node, AKA, normal HTML tag.
+            self.emit_tag(node, name, &indent, writer)?
         }
         // Allows this instance to be reused
         self.vars.clear();
