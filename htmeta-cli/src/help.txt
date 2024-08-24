@@ -1,0 +1,10 @@
+
+USAGE: {} [OPTS] <input.kdl> [output.html]
+
+FLAGS:
+        -h, --hell
+                Shows this menu and quits.
+
+	-m, --minify
+		Disables pretty mode. Essentially uses the least spacing and indentation possible.
+		Awesome for saving space.
