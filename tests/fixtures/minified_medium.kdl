@@ -1,0 +1,15 @@
+html {
+    body {
+        h1 {
+            text "Hello, World!"
+        }
+        div {
+            p {
+                text "Hello, everyone!"
+            }
+            p {
+                text "I'm a p!"
+            }
+        }
+    }
+}

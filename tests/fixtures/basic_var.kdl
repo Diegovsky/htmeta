@@ -1,0 +1,8 @@
+html {
+    body {
+        $text "Hello, World"
+        h1 {
+            text "$text"
+        }
+    }
+}
