@@ -9,6 +9,10 @@ license = "MIT"
 [lib]
 doctest = false
 
+[features]
+default = []
+test_gen = []
+
 [workspace]
 members = ["htmeta-cli"]
 

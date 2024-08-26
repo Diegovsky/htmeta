@@ -1,5 +1,5 @@
 #![feature(let_chains)]
-#![doc(include_str!("../README.md"))]
+#![doc = include_str!("../README.md")]
 
 macro_rules! re {
     ($name:ident, $e:expr) => {
@@ -18,10 +18,26 @@ use std::{
 use kdl::{KdlDocument, KdlNode, KdlValue};
 use regex::Captures;
 
+pub struct PluginContext<'a, 'b: 'a> {
+    pub indent: &'a str,
+    pub writer: &'a mut Writer<'b>,
+    pub emitter: &'a HtmlEmitter<'a>
+}
+
+pub trait IPlugin {
+    fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<bool>;
+}
+
+impl<C> IPlugin for C where C: Fn(&KdlNode, PluginContext) -> EmitResult<bool> {
+    fn emit_node<'a>(&self, node: &KdlNode, context: PluginContext) -> EmitResult<bool> {
+        (*self)(node, context)
+    }
+}
+
 pub type Writer<'a> = &'a mut dyn Write;
 type Text<'b> = Cow<'b, str>;
 pub type EmitResult<T = ()> = io::Result<T>;
-pub type Plugin = Rc<dyn for<'a, 'b> Fn(&'a HtmlEmitter, &'a Writer<'b>) -> EmitResult<bool>>;
+pub type Plugin = Rc<dyn IPlugin>;
 pub type Indent = usize;
 
 const VOID_TAGS: &[&str] = &[
@@ -54,23 +70,26 @@ impl HtmlEmitterBuilder {
         self
     }
 
-    /// Registers plugins for all instances of this builder.
-    pub fn add_plugins<P>(&mut self, plugins: P) -> &mut Self where P: IntoIterator<Item = Plugin> {
-        self.plugins.extend(plugins);
+    /// Registers a plugin for all instances of this builder.
+    pub fn add_plugin<P: IPlugin + 'static>(&mut self, plugin: P) -> &mut Self {
+        self.plugins.push(Rc::new(plugin));
         self
     }
 
     /// Creates a new [`HtmlEmitter`]. You should re-use this builder to create emitters
     /// efficiently.
-    pub fn build<'a>(&self, node: &'a KdlDocument) -> HtmlEmitter<'a> {
+    pub fn build<'a>(&self) -> HtmlEmitter<'a> {
         HtmlEmitter {
-            node,
             current_level: 0,
             indent: self.indent,
             plugins: self.plugins.clone(),
             vars: Default::default(),
         }
     }
+
+    /* pub fn sex(&self, text: &str) -> HtmlEmitter<'> {
+        
+    } */
 }
 
 /// An `HTML` emitter for `htmeta`.
@@ -88,7 +107,6 @@ impl HtmlEmitterBuilder {
 /// ```
 #[derive(Clone)]
 pub struct HtmlEmitter<'a> {
-    pub node: &'a KdlDocument,
     pub indent: Indent,
     pub current_level: Indent,
     pub vars: HashMap<&'a str, Text<'a>>,
@@ -96,14 +114,6 @@ pub struct HtmlEmitter<'a> {
 }
 
 impl<'a> HtmlEmitter<'a> {
-    #[deprecated = "Use the builder interface [`Self::builder()`]"]
-    /// Creates a new [`HtmlEmitter`] with an indentation level of `indent`.
-    ///
-    /// This is deprecated. Use [`Self::builder`] instead.
-    pub fn new(node: &'a KdlDocument, indent: usize) -> Self {
-        Self::builder().indent(indent).build(node)
-    }
-
     /// A convenience method that just calls [`HtmlEmitterBuilder::new`].
     ///
     /// Check out that type's documentation for uses!
@@ -113,10 +123,10 @@ impl<'a> HtmlEmitter<'a> {
 
     /// Returns an [`HtmlEmitter`] with a copy of `self`'s variables and one indentation level
     /// deeper. This emitter should be uses to translate a child of `self`.
-    pub fn subemitter(&self, node: &'a KdlDocument) -> Self {
+    pub fn subemitter(&self) -> Self {
         Self {
             current_level: self.current_level + 1,
-            node,
+            // node,
             ..self.clone()
         }
     }
@@ -170,8 +180,8 @@ impl<'a> HtmlEmitter<'a> {
     /// Emits a compound `HTML` tag named `name`, with `indent` as indentation, using `node` for
     /// properties and children.
     pub fn emit_tag(
-        &mut self,
-        node: &'a KdlNode,
+        &self,
+        node: &KdlNode,
         name: &str,
         indent: &str,
         writer: Writer
@@ -198,7 +208,7 @@ impl<'a> HtmlEmitter<'a> {
             // Children
             if let Some(doc) = node.children() {
                 self.write_line(writer)?;
-                self.subemitter(doc).emit(writer)?;
+                self.subemitter().emit(doc, writer)?;
                 write!(writer, "{}", indent)?;
             }
             write!(writer, "</{}>", name)?;
@@ -207,13 +217,29 @@ impl<'a> HtmlEmitter<'a> {
         Ok(())
     }
 
-    fn call_plugin(&self, mut writer: Writer) -> EmitResult<bool> {
+    fn call_plugin<'b: 'a>(&'b self, node: &'a KdlNode, indent: &'b str, mut writer: Writer<'b>) -> EmitResult<bool> {
         for plug in &self.plugins {
-            if (*plug)(self, &mut writer)? {
+            let ctx = PluginContext {
+                indent, 
+                emitter: self,
+                writer: &mut writer,
+            };
+            if plug.emit_node(node, ctx)? {
                 return Ok(true)
             }
         }
         Ok(false)
+    }
+
+    pub fn emit_text_node(&self, indent: &str, content: &KdlValue, writer: Writer) -> EmitResult {
+        write!(
+            writer,
+            "{}{}",
+            indent,
+            html_escape::encode_text(&self.expand_value(content))
+        )?;
+        self.write_line(writer)?;
+        Ok(())
     }
 
     /// Emits the corresponding `HTML` into the `writer`. The emitter can be re-used after this.
@@ -230,16 +256,11 @@ impl<'a> HtmlEmitter<'a> {
     /// let file = std::fs::File::create("index.html").unwrap();
     /// emitter.emit(&mut file).unwrap();
     /// ```
-    pub fn emit(&mut self, writer: Writer<'a>) -> EmitResult {
+    pub fn emit<'b: 'a>(&mut self, document: &'b KdlDocument, writer: Writer) -> EmitResult {
         let indent = self.indent();
 
-        for node in self.node.nodes() {
+        for node in document.nodes() {
             let name = node.name().value();
-
-            // Plugin shenanigans
-            if self.call_plugin(writer)? {
-                continue
-            }
 
             // variable node
             if name.starts_with("$")
@@ -253,14 +274,13 @@ impl<'a> HtmlEmitter<'a> {
             if name == "text"
                 && let Some(content) = node.get(0)
             {
-                write!(
-                    writer,
-                    "{}{}",
-                    indent,
-                    html_escape::encode_text(&self.expand_value(content.value()))
-                )?;
-                self.write_line(writer)?;
+                self.emit_text_node(&indent, content.value(), writer)?;
                 continue;
+            }
+
+            // Plugin shenanigans
+            if self.call_plugin(node, &indent, writer)? {
+                continue
             }
 
             // Compound node, AKA, normal HTML tag.
@@ -280,14 +300,14 @@ mod tests {
     fn emit_as_str(builder: &HtmlEmitterBuilder, input: &str) -> String {
         let doc: KdlDocument = input.parse().expect("Failed to parse as kdl doc");
         let mut buf = Vec::<u8>::new();
-        let mut emitter = builder.build(&doc);
-        emitter.emit(&mut buf).expect("Failed to emit HTML");
+        let mut emitter = builder.build();
+        emitter.emit(&doc, &mut buf).expect("Failed to emit HTML");
         String::from_utf8(buf).expect("Invalid utf8 found")
     }
 
-    macro_rules! include_fixture {
-        ($expr:expr) => {
-            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/", $expr))
+    macro_rules! fixture_path {
+        ($name:ident, $ext:expr) => {
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/", stringify!($name), $ext)
         };
     }
 
@@ -298,11 +318,21 @@ mod tests {
         ($name:ident, $builder: expr) => {
             #[test]
             fn $name() {
-                let input = include_fixture!(concat!(stringify!($name), ".kdl"));
+                let input = include_str!(fixture_path!($name, ".kdl"));
 
                 let builder = $builder;
                 let result = emit_as_str(&builder, input);
-                assert_eq!(result, include_fixture!(concat!(stringify!($name), ".html")));
+                #[cfg(not(feature="test_gen"))]
+                {
+                    let output = include_str!(fixture_path!($name, ".html"));
+                    assert_eq!(result, output);
+                }
+
+                #[cfg(feature="test_gen")]
+                {
+                    let output = fixture_path!($name, ".html");
+                    std::fs::write(output, result).expect("Failed to save file");
+                }
             }
         };
     }
@@ -321,4 +351,21 @@ mod tests {
     auto_html_test!(minified_basic, minified());
     auto_html_test!(minified_var_scopes, minified());
 
+    struct ShouterPlugin;
+
+    impl IPlugin for ShouterPlugin {
+        fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<bool> {
+            let name = node.name().value();
+            context.emitter.emit_tag(node, &name.to_uppercase(), context.indent, context.writer)?;
+            Ok(true)
+        }
+    }
+
+    fn with_plugin() -> HtmlEmitterBuilder {
+        let mut builder = HtmlEmitter::builder();
+        builder.add_plugin(ShouterPlugin);
+        builder
+    }
+
+    auto_html_test!(shouter_basic, with_plugin());
 }

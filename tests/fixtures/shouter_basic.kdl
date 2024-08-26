@@ -1,0 +1,21 @@
+html {
+    body {
+        $text "Hello, World"
+        h1 {
+            text "$text"
+        }
+        div {
+            $text "$text!"
+            p {
+                text "$text"
+            }
+            $text "Olá, mundo!"
+            p {
+                text "$text"
+            }
+        }
+        h2 {
+            text "$text"
+        }
+    }
+}
