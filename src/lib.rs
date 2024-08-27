@@ -57,7 +57,8 @@ pub use error::Error;
 
 const VOID_TAGS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
-    "track", "wbr"
+    "track", "wbr",
+    "!DOCTYPE" // not a tag at all, but works a lot like one.
 ];
 
 /// A builder for [`HtmlEmitter`]s.
@@ -216,7 +217,7 @@ impl<'a> HtmlEmitter<'a> {
         write!(writer, "{}", args)?;
 
         if is_void {
-            write!(writer, "/>")?;
+            write!(writer, ">")?;
             self.write_line(writer)?;
         } else {
             write!(writer, ">")?;

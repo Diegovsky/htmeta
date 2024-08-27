@@ -7,8 +7,14 @@ edition = "2021"
 name = "htmeta"
 path = "src/main.rs"
 
+[features]
+default = ["templates"]
+templates = ["dep:htmeta-template"]
+
 [dependencies]
 miette = { version = "5.3.0", features = ["fancy"] }
 htmeta = { path="../"}
 kdl = "4.6.0"
 lexopt = "0.3.0"
+htmeta-template = { version = "0.1.0", path = "../htmeta-template", optional = true }
+

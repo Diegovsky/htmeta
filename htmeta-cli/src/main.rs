@@ -44,11 +44,14 @@ impl Args {
 
         let mut parser = Parser::from_args(args);
         let mut builder = HtmlEmitter::builder();
+        #[cfg(feature = "templates")]
+        builder.add_plugin(htmeta_template::TemplatePlugin::default());
         let mut input_filename = None;
         let mut output_filename = None;
         while let Some(arg) = parser.next()? {
             match arg {
                 Long("minify")|Short('m') => drop(builder.minify()),
+                Long("tab-size")|Short('t') => drop(builder.indent(parser.value()?.parse()?)),
                 Value(value) if input_filename.is_none() => input_filename = Some(PathBuf::from(value)),
                 Value(value)  => output_filename = Some(PathBuf::from(value)),
                 _ => return Err(arg.unexpected())
@@ -90,12 +93,20 @@ fn main() -> miette::Result<()> {
         .into_diagnostic()
         .with_context(|| format!("Could not open file {}.", input_filename.display()))?;
     let doc = contents.parse::<KdlDocument>()?;
+    let mut emitter = builder.build();
+
+    // Dump to stdio
+    if output_filename == Some("-".into()) {
+        emitter.emit(&doc, &mut std::io::stdout()).into_diagnostic()?;
+        return Ok(());
+    }
+
+    // Write to file
     let file = std::fs::File::create(
         output_filename.unwrap_or_else(|| input_filename.with_extension("html")),
     )
     .into_diagnostic()?;
     let mut file = BufWriter::new(file);
-    let mut emitter = builder.build(&doc);
-    emitter.emit(&mut file).into_diagnostic()?;
+    emitter.emit(&doc, &mut file).into_diagnostic()?;
     Ok(())
 }
