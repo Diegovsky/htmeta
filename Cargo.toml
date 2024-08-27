@@ -14,7 +14,7 @@ default = []
 test_gen = []
 
 [workspace]
-members = ["htmeta-cli"]
+members = [ "htmeta-auto-test","htmeta-cli", "htmeta-template"]
 
 [dependencies]
 html-escape = "0.2.13"
@@ -24,3 +24,4 @@ regex = "1.10.6"
 [dev-dependencies]
 similar = "2.6.0"
 similar-asserts = "1.5.0"
+htmeta-auto-test = {path="htmeta-auto-test"}

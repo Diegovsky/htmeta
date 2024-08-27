@@ -1,0 +1,15 @@
+[package]
+name = "htmeta-template"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+test_gen = []
+
+[dependencies]
+htmeta = { path = ".." }
+maybe-sync = "0.1.1"
+
+[dev-dependencies]
+htmeta-auto-test = { path = "../htmeta-auto-test"}

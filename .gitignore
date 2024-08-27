@@ -1,5 +1,1 @@
 /target
-
-*.kdl
-*.html
-!tests/fixtures/*

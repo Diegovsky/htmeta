@@ -1,0 +1,10 @@
+html {
+    head {
+    }
+    body {
+        @template name="radio" {
+            input type="radio" id="$id" checked=""
+        }
+        @radio id="10"
+    }
+}

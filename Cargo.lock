@@ -107,9 +107,18 @@ checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
 name = "htmeta"
 version = "0.2.0"
 dependencies = [
+ "htmeta-auto-test",
  "html-escape",
  "kdl",
  "regex",
+ "similar",
+ "similar-asserts",
+]
+
+[[package]]
+name = "htmeta-auto-test"
+version = "0.1.0"
+dependencies = [
  "similar",
  "similar-asserts",
 ]
@@ -122,6 +131,15 @@ dependencies = [
  "kdl",
  "lexopt",
  "miette",
+]
+
+[[package]]
+name = "htmeta-template"
+version = "0.1.0"
+dependencies = [
+ "htmeta",
+ "htmeta-auto-test",
+ "maybe-sync",
 ]
 
 [[package]]
@@ -178,6 +196,12 @@ name = "libc"
 version = "0.2.155"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
+
+[[package]]
+name = "maybe-sync"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7551d6fcc47ecf769e6c8b2e5dd7f56f90361d3d1360e3a280c8d0d7c8e680b7"
 
 [[package]]
 name = "memchr"

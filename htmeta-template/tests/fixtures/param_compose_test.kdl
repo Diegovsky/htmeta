@@ -1,0 +1,13 @@
+html {
+    head {
+    }
+    body {
+        @template name="yesno" {
+            label for="$id" {
+                text "$label"
+            }
+            input type="checkbox" id="$id" checked="" name="$name"
+        }
+        @yesno id="10" name="field" label="Yes or No?"
+    }
+}

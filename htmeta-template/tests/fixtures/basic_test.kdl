@@ -1,0 +1,12 @@
+html {
+    head {
+    }
+    body {
+        @template name="simple" {
+            p {
+                text "Hello, world!"
+            }
+        }
+        @simple
+    }
+}

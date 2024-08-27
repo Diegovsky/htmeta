@@ -1,0 +1,8 @@
+[package]
+name = "htmeta-auto-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+similar = "2.6.0"
+similar-asserts = "1.5.0"

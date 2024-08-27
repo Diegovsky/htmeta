@@ -12,8 +12,10 @@ macro_rules! re {
 use std::{
     borrow::Cow,
     collections::HashMap,
-    io::{self, Write}, rc::Rc,
+    io::Write
 };
+
+pub use kdl;
 
 use kdl::{KdlDocument, KdlNode, KdlValue};
 use regex::Captures;
@@ -25,20 +27,33 @@ pub struct PluginContext<'a, 'b: 'a> {
 }
 
 pub trait IPlugin {
+    fn dyn_clone(&self) -> Box<dyn IPlugin>;
     fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<bool>;
-}
-
-impl<C> IPlugin for C where C: Fn(&KdlNode, PluginContext) -> EmitResult<bool> {
-    fn emit_node<'a>(&self, node: &KdlNode, context: PluginContext) -> EmitResult<bool> {
-        (*self)(node, context)
-    }
 }
 
 pub type Writer<'a> = &'a mut dyn Write;
 type Text<'b> = Cow<'b, str>;
-pub type EmitResult<T = ()> = io::Result<T>;
-pub type Plugin = Rc<dyn IPlugin>;
+pub type EmitResult<T = ()> = Result<T, Error>;
+
+struct Plugin(Box<dyn IPlugin>);
+
+impl Plugin {
+    pub fn new<P: IPlugin + 'static>(plugin: P) -> Self {
+        Self(Box::new(plugin))
+    }
+}
+
+impl Clone for Plugin {
+    fn clone(&self) -> Self {
+        Self(self.0.dyn_clone())
+    }
+}
+
 pub type Indent = usize;
+
+mod error;
+
+pub use error::Error;
 
 const VOID_TAGS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
@@ -72,7 +87,7 @@ impl HtmlEmitterBuilder {
 
     /// Registers a plugin for all instances of this builder.
     pub fn add_plugin<P: IPlugin + 'static>(&mut self, plugin: P) -> &mut Self {
-        self.plugins.push(Rc::new(plugin));
+        self.plugins.push(Plugin::new(plugin));
         self
     }
 
@@ -159,7 +174,7 @@ impl<'a> HtmlEmitter<'a> {
 
     /// Replaces all occurences of variables inside `text` and returns a new string.
     pub fn expand_string<'b>(&self, text: &'b str) -> Text<'b> {
-        re!(VAR, r"(\$\w+)");
+        re!(VAR, r"\$(\w+)");
         VAR.replace(text, |captures: &Captures| {
             self.vars
                 .get(&captures[1])
@@ -224,7 +239,7 @@ impl<'a> HtmlEmitter<'a> {
                 emitter: self,
                 writer: &mut writer,
             };
-            if plug.emit_node(node, ctx)? {
+            if plug.0.emit_node(node, ctx)? {
                 return Ok(true)
             }
         }
@@ -266,7 +281,7 @@ impl<'a> HtmlEmitter<'a> {
             if name.starts_with("$")
                 && let Some(val) = node.get(0)
             {
-                self.vars.insert(name, self.expand_value(val.value()));
+                self.vars.insert(&name[1..], self.expand_value(val.value()));
                 continue;
             }
 
@@ -292,51 +307,19 @@ impl<'a> HtmlEmitter<'a> {
     }
 }
 
+
+#[doc(hidden)]
+pub fn emit_as_str(builder: &HtmlEmitterBuilder, input: &str) -> String {
+    let doc: kdl::KdlDocument = input.parse().expect("Failed to parse as kdl doc");
+    let mut buf = Vec::<u8>::new();
+    let mut emitter = builder.build();
+    emitter.emit(&doc, &mut buf).expect("Failed to emit HTML");
+    String::from_utf8(buf).expect("Invalid utf8 found")
+}
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
-    use similar_asserts::assert_eq;
-
-    fn emit_as_str(builder: &HtmlEmitterBuilder, input: &str) -> String {
-        let doc: KdlDocument = input.parse().expect("Failed to parse as kdl doc");
-        let mut buf = Vec::<u8>::new();
-        let mut emitter = builder.build();
-        emitter.emit(&doc, &mut buf).expect("Failed to emit HTML");
-        String::from_utf8(buf).expect("Invalid utf8 found")
-    }
-
-    macro_rules! fixture_path {
-        ($name:ident, $ext:expr) => {
-            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/", stringify!($name), $ext)
-        };
-    }
-
-    macro_rules! auto_html_test {
-        ($name:ident) => {
-            auto_html_test!($name, HtmlEmitter::builder());
-        };
-        ($name:ident, $builder: expr) => {
-            #[test]
-            fn $name() {
-                let input = include_str!(fixture_path!($name, ".kdl"));
-
-                let builder = $builder;
-                let result = emit_as_str(&builder, input);
-                #[cfg(not(feature="test_gen"))]
-                {
-                    let output = include_str!(fixture_path!($name, ".html"));
-                    assert_eq!(result, output);
-                }
-
-                #[cfg(feature="test_gen")]
-                {
-                    let output = fixture_path!($name, ".html");
-                    std::fs::write(output, result).expect("Failed to save file");
-                }
-            }
-        };
-    }
-
+    use htmeta_auto_test::*;
 
     auto_html_test!(basic_test);
     auto_html_test!(basic_var);
@@ -354,6 +337,9 @@ mod tests {
     struct ShouterPlugin;
 
     impl IPlugin for ShouterPlugin {
+        fn dyn_clone(&self) -> Box<dyn IPlugin> {
+            Box::new(ShouterPlugin)
+        }
         fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<bool> {
             let name = node.name().value();
             context.emitter.emit_tag(node, &name.to_uppercase(), context.indent, context.writer)?;
