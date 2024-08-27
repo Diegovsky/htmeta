@@ -4,7 +4,7 @@ use lexopt::Parser;
 use miette::{Context, Diagnostic, IntoDiagnostic};
 use std::{
     ffi::OsString,
-    io::BufWriter,
+    io::{BufWriter, Write},
     path::{Path, PathBuf},
 };
 
@@ -97,7 +97,9 @@ fn main() -> miette::Result<()> {
 
     // Dump to stdio
     if output_filename == Some("-".into()) {
-        emitter.emit(&doc, &mut std::io::stdout()).into_diagnostic()?;
+        let mut stdout = std::io::stdout();
+        emitter.emit(&doc, &mut stdout).into_diagnostic()?;
+        stdout.flush().unwrap();
         return Ok(());
     }
 

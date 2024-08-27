@@ -1,0 +1,9 @@
+html {
+    head {
+    }
+    body {
+        h1 {
+            text "Hello, world!"
+        }
+    }
+}
