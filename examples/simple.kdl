@@ -1,0 +1,29 @@
+// Shows a simple page using `HTMETA`
+!DOCTYPE "html"
+html {
+    head {
+        meta charset="utf-8"
+        // Includes tailwindcss
+        // Auto-closes tags
+        script src="https://cdn.tailwindcss.com"
+        title {
+            text "title"
+        }
+    }
+    body class="vw-100 vh-100" {
+        div class="m-auto w-[200px] h-[100px]" {
+            h1 class="text-lg" {
+                text "Welcome to the website!"
+            }
+            div class="inline-flex align-center flex-col" {
+                @template name="text" {
+                    p class="border-2 rounded-lg border-red my-2"{
+                        text "$content"
+                    }
+                }
+                @text content="Tired of copy-pasting stuff around?"
+                @text content="Use templates!"
+            }
+        }
+    }
+}
