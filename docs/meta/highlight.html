@@ -1,0 +1,141 @@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://raw.githubusercontent.com/Devasta/highlightjs-kdl/master/src/languages/kdl.js" charset="utf-8"></script>
+<style>
+.hljs {
+      background: var(--code-block-background-color);;
+      color: var(--main-color);
+}
+</style>
+<script>
+function hljsDefineKDL(hljs) {
+
+    const ESCAPES = {
+        scope: 'char.escape',
+        variants: [
+            { begin: /\\n/ },
+            { begin: /\\r/ },
+            { begin: /\\t/ },
+            { begin: /\\"/ },
+            { begin: /\\\\/ },
+            { begin: /\\b/ },
+            { begin: /\\f/ }
+        ]
+    };
+
+    const LITERALS = [
+        "true",
+        "false",
+        "null"
+    ];
+
+    const STRINGS = {
+        scope: 'string',
+        variants: [
+            {
+                begin: /r(#)+"/,
+                end: /"(#)+/
+            },
+            {
+                begin: /"/,
+                end: /"/
+            }
+        ],
+        contains: [
+            ESCAPES
+        ]
+    };
+
+
+    const COMMENTS = {
+        scope: 'comment',
+        variants: [
+            hljs.C_BLOCK_COMMENT_MODE,
+            hljs.C_LINE_COMMENT_MODE,
+            {
+                begin: /\/-/,
+                end: /\n/
+            }
+        ]
+    };
+
+    const NUMBERS = {
+        scope: 'number',
+        variants: [
+            {
+                begin: /([+-])?0b[_01]*/,
+            },
+            {
+                begin: /([+-])?0o[_0-7]*/,
+            },
+            {
+                begin: /([+-])?0x[_0-9A-Fa-f]*/,
+            },
+            {
+                begin: hljs.C_NUMBER_RE
+            }
+        ]
+    };
+
+    const TYPEANNOTATIONS = {
+        scope: 'type',
+        begin: /\(/,
+        end: /\)/
+    };
+
+    return {
+        name: 'KDL',
+        aliases: [ 'kdl' ],
+        contains: [
+            STRINGS,
+            COMMENTS,
+            NUMBERS,
+            TYPEANNOTATIONS
+        ],
+        keywords: {
+            literal: LITERALS
+        }
+    };
+}
+</script>
+<script>
+// Heavily borrowed from Slint
+window.addEventListener("DOMContentLoaded", () => {
+    hljs.registerLanguage('kdl', hljsDefineKDL);
+    const rustDoc = document.querySelector('meta[name="generator"]')?.content == "rustdoc";
+    if (rustDoc) {
+      // Only highlight html and kdl blocks, leave the others to rustdoc
+      for (codeBlock of document.querySelectorAll(".language-html, .language-kdl")) {
+        hljs.highlightElement(codeBlock)
+      }
+
+      // Some of the rustdoc selectors require the pre element to have the rust class
+      for (codeBlock of document.querySelectorAll(".hljs")) {
+        codeBlock.classList.add("rust")
+      }
+
+      // Change the hljs generated classes to the rustdoc
+      // ones, so that the highlighting adjusts to the theme correctly.
+      const highlightJSToRustDoc = [
+        ["comment", "comment"],
+        ["number", "number"],
+        ["symbol", "struct"], // width:
+        ["keyword", "kw"],
+        ["built_in", "primitive"],
+        ["string", "string"],
+        ["title", "fnname"], // Foo :=
+        ["type", "type"],
+        // html additions
+        ["attr", "type"],
+        ["tag", "blank"],
+        ["name", "kw"],
+      ];
+
+      for ([hljs_class, rustdoc_class] of highlightJSToRustDoc) {
+        for (titleElement of document.querySelectorAll(`.hljs-${hljs_class}`)) {
+          titleElement.classList.remove(`hljs-${hljs_class}`);
+          titleElement.classList.add(rustdoc_class);
+        }
+      }
+      }});
+</script>

@@ -1,5 +1,5 @@
-This crates implements a (simple) flavour of [`KDL`] called `htmeta`. This dialect's purpose is
-to allow a straightforward representation of `HTML`.
+This crates implements a (simple) flavour of [`KDL`] called `htmeta`. This
+dialect's purpose is to allow a straightforward representation of `HTML`.
 
 # Format
 As [`KDL`] is already very similar to `HTML` semantically, `htmeta` only adds 2 things:
@@ -7,8 +7,8 @@ As [`KDL`] is already very similar to `HTML` semantically, `htmeta` only adds 2 
  - Variables to reduce repetition.
 
 ## Text nodes
-Text nodes are creatively named `text` and they can only have one positional argument, which is
-the text to be directly pasted into the resulting `HTML`.
+Text nodes are creatively named `text` and they can only have one positional
+argument, which is the text to be directly pasted into the resulting `HTML`.
 
 Example:
 ```kdl
@@ -33,9 +33,9 @@ Results in:
 ```
 
 ## Variables
-If you ever used CSS-based frameworks like `TailwindCSS` or `Bootstrap`, you know
-how tedious it is to type the same classes over and over again. Hence, `htmeta` implements a
-simple variable mechanism that reduces duplication.
+If you ever used CSS-based frameworks like `TailwindCSS` or `Bootstrap`, you
+know how tedious it is to type the same classes over and over again. Hence,
+`htmeta` implements a simple variable mechanism that reduces duplication.
 
 Example:
 ```kdl

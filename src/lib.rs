@@ -20,20 +20,37 @@ pub use kdl;
 use kdl::{KdlDocument, KdlNode, KdlValue};
 use regex::Captures;
 
+/// Information that plugins can use to change what is being emitted.
+///
+/// Check out [`HtmlEmitter`] for more information!
 pub struct PluginContext<'a, 'b: 'a> {
+    /// Pre-computed indentation from the current level.
     pub indent: &'a str,
+    /// The [`Writer`] handle we're currently emitting into.
     pub writer: &'a mut Writer<'b>,
+    /// A handle to the current node's emitter.
     pub emitter: &'a HtmlEmitter<'a>
 }
 
+/// A trait that allows you to hook into `htmeta`'s emitter and extend it!
 pub trait IPlugin {
     fn dyn_clone(&self) -> Box<dyn IPlugin>;
     fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<bool>;
 }
 
+/// Convenient alias for a [`std::io::Write`] mutable reference.
 pub type Writer<'a> = &'a mut dyn Write;
-type Text<'b> = Cow<'b, str>;
+
+/// Convenient alias for this crate's return types.
 pub type EmitResult<T = ()> = Result<T, Error>;
+
+/// The type used to represent indentation length.
+///
+/// Could change in the future to be more efficient, so please,
+/// use this instead of the type it is aliasing!
+pub type Indent = usize;
+
+type Text<'b> = Cow<'b, str>;
 
 struct Plugin(Box<dyn IPlugin>);
 
@@ -48,8 +65,6 @@ impl Clone for Plugin {
         Self(self.0.dyn_clone())
     }
 }
-
-pub type Indent = usize;
 
 mod error;
 
@@ -108,18 +123,25 @@ impl HtmlEmitterBuilder {
     } */
 }
 
-/// An `HTML` emitter for `htmeta`.
+/// The `HTML` emitter for `htmeta`.
 ///
 /// ```rust
 /// use htmeta::HtmlEmitter;
 /// use kdl::KdlDocument;
-/// let doc KdlDocument = r#"html { body { h1 { text "Title" }}}"#.parse().unwrap();
+/// let doc: KdlDocument = r#"
+/// html {
+///     body {
+///         h1 {
+///             text "Title"
+///         }
+///     }
+/// }"#.parse().unwrap();
 ///
 /// // Creates an emitter with an indentation level of 4.
-/// let emitter = HtmlEmitter::builder().indent(4).build(&doc);
+/// let mut emitter = HtmlEmitter::builder().indent(4).build();
 ///
 /// // Emits html to the terminal.
-/// emitter.emit(std::io::stdout()).unwrap();
+/// emitter.emit(&doc, &mut std::io::stdout()).unwrap();
 /// ```
 #[derive(Clone)]
 pub struct HtmlEmitter<'a> {
@@ -138,7 +160,7 @@ impl<'a> HtmlEmitter<'a> {
     }
 
     /// Returns an [`HtmlEmitter`] with a copy of `self`'s variables and one indentation level
-    /// deeper. This emitter should be uses to translate a child of `self`.
+    /// deeper. This emitter should be used to translate a child of `self`.
     pub fn subemitter(&self) -> Self {
         Self {
             current_level: self.current_level + 1,
@@ -247,6 +269,21 @@ impl<'a> HtmlEmitter<'a> {
         Ok(false)
     }
 
+    /// Simply emits the given text content in `content` into the `writer`, indented by the
+    /// `indent` param.
+    ///
+    /// # Example
+    /// ```
+    /// use kdl::KdlValue;
+    /// use htmeta::HtmlEmitter;
+    /// let emitter = HtmlEmitter::builder().indent(4).build();
+    /// let mut writer = Vec::<u8>::new();
+    /// // Usually this value is given to you by other functions.
+    /// let indent = emitter.indent();
+    /// let value = KdlValue::String("I'm text".into());
+    /// emitter.emit_text_node(&indent, &value, &mut writer).unwrap();
+    /// assert_eq!(writer, b"I'm text\n");
+    /// ```
     pub fn emit_text_node(&self, indent: &str, content: &KdlValue, writer: Writer) -> EmitResult {
         write!(
             writer,
@@ -265,12 +302,19 @@ impl<'a> HtmlEmitter<'a> {
     /// ```rust
     /// use htmeta::HtmlEmitter;
     /// use kdl::KdlDocument;
-    /// let doc: KdlDocument = r#"html { body { h1 { text "Title" }}}"#.parse().unwrap();
+    /// let doc: KdlDocument = r#"
+    ///     html {
+    ///         body {
+    ///             h1 {
+    ///                 text "Title"
+    ///             }
+    ///         }
+    ///     }"#.parse().unwrap();
     /// // Creates an emitter with an indentation level of 4.
-    /// let emitter = HtmlEmitter::new(&doc, 4);
+    /// let mut emitter = HtmlEmitter::builder().indent(4).build();
     /// // You should wrap this with a `BufWriter` for actual use.
-    /// let file = std::fs::File::create("index.html").unwrap();
-    /// emitter.emit(&mut file).unwrap();
+    /// let mut file = std::fs::File::create("index.html").unwrap();
+    /// emitter.emit(&doc, &mut file).unwrap();
     /// ```
     pub fn emit<'b: 'a>(&mut self, document: &'b KdlDocument, writer: Writer) -> EmitResult {
         let indent = self.indent();

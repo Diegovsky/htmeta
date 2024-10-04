@@ -25,3 +25,10 @@ regex = "1.10.6"
 similar = "2.6.0"
 similar-asserts = "1.5.0"
 htmeta-auto-test = {path="htmeta-auto-test"}
+
+[package.metadata.docs.rs]
+# Adds the syntax highliting
+rustdoc-args = [
+  "--html-in-header",
+  "docs/meta/highlight.html",
+]
