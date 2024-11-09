@@ -38,7 +38,7 @@ impl TemplatePlugin {
             .extend(node.entries().iter().filter_map(|entry| {
                 Some((
                     entry.name()?.value(),
-                    context.emitter.expand_value(entry.value()),
+                    context.emitter.vars.expand_value(entry.value()),
                 ))
             }));
         subemitter.emit(template.children().expect("Internal error: template tags must have children"), context.writer)?;
@@ -65,7 +65,8 @@ impl IPlugin for TemplatePlugin {
             self.templates.lock().insert(
                 context
                     .emitter
-                    .expand_value(template_name.value())
+                    .vars
+                    .expand_value(template_name)
                     .into_owned(),
                 node.clone(),
             );

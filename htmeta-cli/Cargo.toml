@@ -1,7 +1,12 @@
 [package]
 name = "htmeta-cli"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
+authors = ["Diego Augusto <diego@diegovsky.me>"]
+description = "A CLI for htmeta, a KDL dialect that compiles into HTML."
+license = "MIT"
+repository = "https://github.com/Diegovsky/htmeta"
+keywords = ["html", "kdl", "web", "tool"]
 
 [[bin]]
 name = "htmeta"
@@ -12,9 +17,8 @@ default = ["templates"]
 templates = ["dep:htmeta-template"]
 
 [dependencies]
-miette = { version = "5.3.0", features = ["fancy"] }
-htmeta = { path="../"}
-kdl = "4.6.0"
+miette = { version = "7.2.0", features = ["fancy"] }
+htmeta = { path="../htmeta" }
 lexopt = "0.3.0"
 htmeta-template = { version = "0.1.0", path = "../htmeta-template", optional = true }
 

@@ -1,4 +1,4 @@
-use htmeta::{HtmlEmitter, HtmlEmitterBuilder};
+use htmeta::{HtmlEmitter, HtmlEmitterBuilder, kdl};
 use kdl::KdlDocument;
 use lexopt::Parser;
 use miette::{Context, Diagnostic, IntoDiagnostic};

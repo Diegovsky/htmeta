@@ -1,0 +1,32 @@
+!DOCTYPE html
+html {
+    head {
+        meta charset="utf-8"
+        meta name=viewport content="width=device-width, initial-scale=1.0"
+        script src="https://cdn.tailwindcss.com"
+    }
+    body class="grid" {
+        @template name=nav-item {
+            a href="$link" class="$class" text="$text"
+            div slot="penis" {
+            }
+        }
+        @template name=card {
+            div class="p-4 text-zinc-100 bg-zinc-800 rounded-[15px]" {
+                text "$text"
+            }
+        }
+        nav class="
+            sticky justify-evenly content-center min-h-20 grid grid-flow-col
+            bg-slate-200 text-lg
+        " \
+        {
+            @nav-item link="#" text="Home"
+            @nav-item link="#" text="Projects"
+        }
+        h1 class="text-3xl text-center font-bold" {
+            text "Hello world!"
+        }
+        @card text="penis"
+    }
+}

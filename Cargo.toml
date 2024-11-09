@@ -1,34 +1,11 @@
-[package]
-name = "htmeta"
-version = "0.3.0"
-edition = "2021"
-authors = ["Diego Augusto <diego@diegovsky.me>"]
-description = "A KDL dialect for HTML"
-license = "MIT"
-
-[lib]
-doctest = false
-
-[features]
-default = []
-test_gen = []
-
 [workspace]
-members = [ "htmeta-auto-test","htmeta-cli", "htmeta-template"]
+default-members = ["htmeta"]
+members = ["htmeta", "htmeta-auto-test","htmeta-cli", "htmeta-template"]
+resolver = "2"
 
-[dependencies]
-html-escape = "0.2.13"
-kdl = "4.6.0"
-regex = "1.10.6"
+[workspace.dependencies]
+kdl = "6.0.0-alpha.1"
 
-[dev-dependencies]
-similar = "2.6.0"
-similar-asserts = "1.5.0"
-htmeta-auto-test = {path="htmeta-auto-test"}
+[patch.'crates-io']
+kdl = { git = "https://github.com/kdl-org/kdl-rs/", rev = "a641995293ffa93c7958f4f5462bb2aa5c8a2c45"}
 
-[package.metadata.docs.rs]
-# Adds the syntax highliting
-rustdoc-args = [
-  "--html-in-header",
-  "docs/meta/highlight.html",
-]

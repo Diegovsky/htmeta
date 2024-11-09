@@ -1,0 +1,10 @@
+html {
+    head {
+    }
+    body {
+        h1 text="Hello, world!"
+        br
+        p class="big" text="Not rendered" text="Rendered"
+        button disabled text="you can't press me"
+    }
+}
