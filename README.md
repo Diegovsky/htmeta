@@ -41,3 +41,5 @@ I might be biased, but I **much** prefer `htmeta`'s straightforwardness!
 Checkout the [repository](https://github.com/Diegovsky/htmeta). You can find examples and more documentation there!
 
 Read the [details](./DETAILS.md) document for, well, details on what you can do with `htmeta`!.
+
+[`KDL`]: kdl.dev
