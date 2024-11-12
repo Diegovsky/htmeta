@@ -1,9 +1,12 @@
+# HTMETA
 ![GitHub Release](https://img.shields.io/github/v/release/Diegovsky/htmeta)
 ![GitHub Repo stars](https://img.shields.io/github/stars/Diegovsky/htmeta)
 ![GitHub Forks](https://img.shields.io/github/forks/Diegovsky/htmeta)
 ![GitHub Contributors](https://img.shields.io/github/contributors/Diegovsky/htmeta)
 
+You can think of this as HTML 2.
 
+## What's this?
 This crates implements a (simple) flavour of [`KDL`] called `htmeta`. This
 allows you to write `HTML` in a better, more comfortable and simpler format than
 raw `HTML`!
