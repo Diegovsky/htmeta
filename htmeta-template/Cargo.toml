@@ -9,7 +9,6 @@ test_gen = []
 
 [dependencies]
 htmeta = { path = "../htmeta" }
-maybe-sync = "0.1.1"
 
 [dev-dependencies]
 htmeta-auto-test = { path = "../htmeta-auto-test"}

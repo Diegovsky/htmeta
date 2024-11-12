@@ -11,28 +11,11 @@ macro_rules! re {
 
 use std::{borrow::Cow, collections::HashMap, io::Write, rc::Rc};
 
+use dyn_clone::DynClone;
 pub use kdl;
 
 use kdl::{KdlDocument, KdlNode, KdlValue};
 use regex::Captures;
-
-/// Information that plugins can use to change what is being emitted.
-///
-/// Check out [`HtmlEmitter`] for more information!
-pub struct PluginContext<'a, 'b: 'a> {
-    /// Pre-computed indentation from the current level.
-    pub indent: &'a str,
-    /// The [`Writer`] handle we're currently emitting into.
-    pub writer: &'a mut Writer<'b>,
-    /// A handle to the current node's emitter.
-    pub emitter: &'a HtmlEmitter<'a>,
-}
-
-/// A trait that allows you to hook into `htmeta`'s emitter and extend it!
-pub trait IPlugin {
-    fn dyn_clone(&self) -> Box<dyn IPlugin>;
-    fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<bool>;
-}
 
 /// Convenient alias for a [`std::io::Write`] mutable reference.
 pub type Writer<'a> = &'a mut dyn Write;
@@ -46,19 +29,58 @@ pub type EmitResult<T = ()> = Result<T, Error>;
 /// use this instead of the type it is aliasing!
 pub type Indent = usize;
 
-type Text<'b> = Cow<'b, str>;
+/// Information that plugins can use to change what is being emitted.
+///
+/// Check out [`HtmlEmitter`] for more information!
+pub struct PluginContext<'a, 'b: 'a> {
+    /// Pre-computed indentation from the current level.
+    pub indent: &'a str,
+    /// The [`Writer`] handle we're currently emitting into.
+    pub writer: &'a mut Writer<'b>,
+    /// A handle to the current node's emitter.
+    pub emitter: &'a HtmlEmitter<'a>,
+}
 
-struct Plugin(Box<dyn IPlugin>);
+/// Information that plugins can use to change what is being emitted.
+///
+/// Check out [`HtmlEmitter`] for more information!
+pub struct PluginMutContext<'a, 'b: 'a> {
+    /// Pre-computed indentation from the current level.
+    pub indent: &'a str,
+    /// The [`Writer`] handle we're currently emitting into.
+    pub writer: &'a mut Writer<'b>,
+    /// A mutable handle to the current node's emitter.
+    pub emitter: &'a mut HtmlEmitter<'a>,
+}
 
-impl Plugin {
-    pub fn new<P: IPlugin + 'static>(plugin: P) -> Self {
-        Self(Box::new(plugin))
+#[derive(Debug, Clone, Copy)]
+pub enum EmitStatus {
+    Skip,
+    Emmited,
+    NeedsMutation,
+}
+
+/// A trait that allows you to hook into `htmeta`'s emitter and extend it!
+pub trait IPlugin: DynClone {
+    fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<EmitStatus>;
+    fn emit_node_mut(&mut self, node: &KdlNode, context: PluginContext) -> EmitResult<()> {
+        let _ = (node, context);
+        unimplemented!("")
     }
 }
 
-impl Clone for Plugin {
-    fn clone(&self) -> Self {
-        Self(self.0.dyn_clone())
+type Text<'b> = Cow<'b, str>;
+
+#[derive(Clone)]
+struct Plugin(Rc<dyn IPlugin>);
+
+impl Plugin {
+    pub fn new<P: IPlugin + 'static>(plugin: P) -> Self {
+        Self(Rc::new(plugin))
+    }
+
+    pub fn make_mut(&mut self) -> &mut dyn IPlugin {
+        dyn_clone::rc_make_mut(&mut self.0)
     }
 }
 
@@ -115,10 +137,6 @@ impl HtmlEmitterBuilder {
             vars: Default::default(),
         }
     }
-
-    /* pub fn sex(&self, text: &str) -> HtmlEmitter<'> {
-
-    } */
 }
 
 type VarMap<'content> = HashMap<Box<str>, Text<'content>>;
@@ -313,21 +331,41 @@ impl<'a> HtmlEmitter<'a> {
         Ok(())
     }
 
-    fn call_plugin<'b: 'a>(
-        &'b self,
-        node: &'a KdlNode,
-        indent: &'b str,
-        mut writer: Writer<'b>,
+    fn call_plugin(
+        &mut self,
+        node: &KdlNode,
+        indent: &str,
+        mut writer: Writer,
     ) -> EmitResult<bool> {
-        for plug in &self.plugins {
+        let mut needs_mut_plugin = None;
+        for (i, plug) in self.plugins.iter().enumerate() {
             let ctx = PluginContext {
                 indent,
                 emitter: self,
                 writer: &mut writer,
             };
-            if plug.0.emit_node(node, ctx)? {
-                return Ok(true);
+            match plug.0.emit_node(node, ctx)? {
+                EmitStatus::Skip => continue,
+                EmitStatus::Emmited => return Ok(true),
+                EmitStatus::NeedsMutation => {
+                    needs_mut_plugin = Some(i);
+                    break;
+                }
             }
+        }
+        if let Some(plugin_idx) = needs_mut_plugin {
+            // Remove plugin to respect ownership rules
+            let mut plugin = self.plugins.remove(plugin_idx);
+            let ctx = PluginContext {
+                indent,
+                emitter: self,
+                writer: &mut writer,
+            };
+            plugin.make_mut().emit_node_mut(node, ctx)?;
+            // Reinsert modified plugin
+            self.plugins.insert(plugin_idx, plugin);
+
+            return Ok(true);
         }
         Ok(false)
     }
@@ -447,18 +485,16 @@ pub mod tests {
     auto_html_test!(minified_basic, minified());
     auto_html_test!(minified_var_scopes, minified());
 
+    #[derive(Clone)]
     struct ShouterPlugin;
 
     impl IPlugin for ShouterPlugin {
-        fn dyn_clone(&self) -> Box<dyn IPlugin> {
-            Box::new(ShouterPlugin)
-        }
-        fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<bool> {
+        fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<EmitStatus> {
             let name = node.name().value();
             context
                 .emitter
                 .emit_tag(node, &name.to_uppercase(), context.indent, context.writer)?;
-            Ok(true)
+            Ok(EmitStatus::Emmited)
         }
     }
 

@@ -1,20 +1,12 @@
 use std::collections::HashMap;
 
 use htmeta::{
-    kdl::KdlNode,
-    EmitResult, IPlugin, PluginContext,
+    kdl::KdlNode, EmitResult, EmitStatus, IPlugin, PluginContext
 };
-use maybe_sync::Mutex;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct TemplatePlugin {
-    templates: Mutex<HashMap<String, KdlNode>>,
-}
-
-impl Clone for TemplatePlugin {
-    fn clone(&self) -> Self {
-        Self { templates: Mutex::new(self.templates.lock().clone()) }
-    }
+    templates: HashMap<String, KdlNode>,
 }
 
 impl TemplatePlugin {
@@ -23,15 +15,15 @@ impl TemplatePlugin {
         name: &str,
         node: &KdlNode,
         context: PluginContext,
-    ) -> EmitResult<bool> {
+    ) -> EmitResult<EmitStatus> {
         if node.children().is_some() {
             return Err(format!("{name}: Template instantiations must not have bodies!"))?
         }
         let mut subemitter = context.emitter.clone();
 
-        let templates = self.templates.lock();
+        let templates = &self.templates;
         let Some(template) = templates.get(name) else {
-            return Ok(false);
+            return Ok(EmitStatus::Skip);
         };
         subemitter
             .vars
@@ -42,38 +34,43 @@ impl TemplatePlugin {
                 ))
             }));
         subemitter.emit(template.children().expect("Internal error: template tags must have children"), context.writer)?;
-        Ok(true)
+        Ok(EmitStatus::Emmited)
     }
 }
 
 impl IPlugin for TemplatePlugin {
-    fn dyn_clone(&self) -> Box<dyn IPlugin> {
-        Box::new(self.clone())
-    }
-    fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<bool> {
+    fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<EmitStatus> {
         let name = node.name().value();
         let Some(name) = name.strip_prefix('@') else {
-            return Ok(false);
+            return Ok(EmitStatus::Skip);
         };
+        // Template registry command
         if name == "template" {
-            let template_name = node
-                .get("name")
-                .ok_or_else(|| format!("{name}: Template tags must have a `name` parameter!"))?;
-            if node.children().is_none() {
-                return Err(format!("{name}: Template tags must have children!"))?;
-            }
-            self.templates.lock().insert(
-                context
-                    .emitter
-                    .vars
-                    .expand_value(template_name)
-                    .into_owned(),
-                node.clone(),
-            );
-            Ok(true)
+            Ok(EmitStatus::NeedsMutation)
         } else {
             self.emit_template(name, node, context)
         }
+    }
+    fn emit_node_mut(&mut self, node: &KdlNode, context: PluginContext) -> EmitResult<()> {
+        let name = node.name().value();
+        let Some(name) = name.strip_prefix('@') else {
+            return Err(format!("Unexpected tag in `emit_node_mut`: {name}"))?
+        };
+        let template_name = node
+            .get("name")
+            .ok_or_else(|| format!("{name}: Template tags must have a `name` parameter!"))?;
+        if node.children().is_none() {
+            return Err(format!("{name}: Template tags must have children!"))?;
+        }
+        self.templates.insert(
+            context
+                .emitter
+                .vars
+                .expand_value(template_name)
+                .into_owned(),
+            node.clone(),
+        );
+        Ok(())
     }
 }
 

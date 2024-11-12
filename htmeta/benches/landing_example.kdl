@@ -7,13 +7,11 @@ html {
     }
     body class="grid" {
         @template name=nav-item {
-            a href="$link" class="$class" text="$text"
-            div slot="penis" {
-            }
+            a href="$link" class="$class" text="$text $var"
         }
         @template name=card {
             div class="p-4 text-zinc-100 bg-zinc-800 rounded-[15px]" {
-                text "$text"
+                @nav-item text="$text" class="bg-amber-500"
             }
         }
         nav class="
@@ -27,6 +25,6 @@ html {
         h1 class="text-3xl text-center font-bold" {
             text "Hello world!"
         }
-        @card text="penis"
+        @card text="hi"
     }
 }

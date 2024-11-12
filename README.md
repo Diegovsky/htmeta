@@ -1,73 +1,43 @@
+![GitHub Release](https://img.shields.io/github/v/release/Diegovsky/htmeta)
+![GitHub Repo stars](https://img.shields.io/github/stars/Diegovsky/htmeta)
+![GitHub Forks](https://img.shields.io/github/forks/Diegovsky/htmeta)
+![GitHub Contributors](https://img.shields.io/github/contributors/Diegovsky/htmeta)
+
+
 This crates implements a (simple) flavour of [`KDL`] called `htmeta`. This
-dialect's purpose is to allow a straightforward representation of `HTML`.
+allows you to write `HTML` in a better, more comfortable and simpler format than
+raw `HTML`!
 
-# Format
-As [`KDL`] is already very similar to `HTML` semantically, `htmeta` only adds 2 things:
- - A way to differentiate true `text` content to be shown in `HTML`.
- - Variables to reduce repetition.
+Mainly, this gets rid of the tag pairs `<>` and `</>`, in favour of good ol' curly brackets.
+Here's the same page written in both `HTML` and `htmeta`: 
 
-## Text nodes
-Text nodes are creatively named `text` and they can only have one positional
-argument, which is the text to be directly pasted into the resulting `HTML`.
+```html
+<!DOCTYPE html>
+<html>
+    <body>
+        <h1>Welcome!</h1>
+        <p>
+            This is an example page. Very cool!
+        </p>
+    </body>
+</html>
+```
 
-Example:
 ```kdl
+!DOCTYPE html
 html {
     body {
-        h1 {
-            text "Title"
+        h1 text="Welcome!"
+        p {
+            text "This is an example page. Very cool!"
         }
     }
 }
 ```
 
-Results in:
-```html
-<html>
-    <body>
-        <h1>
-            Title
-        </h1>
-    </body>
-</html>
-```
+I might be biased, but I **much** prefer `htmeta`'s straightforwardness!
 
-## Variables
-If you ever used CSS-based frameworks like `TailwindCSS` or `Bootstrap`, you
-know how tedious it is to type the same classes over and over again. Hence,
-`htmeta` implements a simple variable mechanism that reduces duplication.
+## More Information
+Checkout the [repository](https://github.com/Diegovsky/htmeta). You can find examples and more documentation there!
 
-Example:
-```kdl
-html {
-    head {
-        meta charset="utf-8"
-        // Includes tailwindcss
-        script src="https://cdn.tailwindcss.com"
-    }
-    body {
-        // creates a variable called `$btn_class`
-        $btn_class "border-1 rounded-lg"
-
-        // Value of `$btn_class` is reused inside these buttons:
-        button class="$btn_class ml-4"
-        bttton class="$btn_class mr-4"
-    }
-}
-```
-
-Results in:
-```html
-<html>
-    <head>
-        <meta charset="utf-8"/>
-        <script src="https://cdn.tailwindcss.com"></script>
-    </head>
-    <body>
-        <button class="border-1 rounded-lg ml-4"></button>
-        <bttton class="border-1 rounded-lg mr-4"></bttton>
-    </body>
-</html>
-```
-
-[`KDL`]: https://kdl.dev/
+Read the [details](./DETAILS.md) document for, well, details on what you can do with `htmeta`!.
