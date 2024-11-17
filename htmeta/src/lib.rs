@@ -140,6 +140,8 @@ impl HtmlEmitterBuilder {
 }
 
 type VarMap<'content> = HashMap<Box<str>, Text<'content>>;
+
+/// Holds all node's variables
 #[derive(Clone, Debug, Default)]
 pub struct Vars<'content> {
     vars: Rc<VarMap<'content>>,
@@ -170,14 +172,17 @@ impl<'content> Vars<'content> {
         Rc::make_mut(&mut self.vars)
     }
 
+    /// Inserts a new variable into the node.
     pub fn insert(&mut self, key: &str, value: Text<'content>) {
         self.make_mut().insert(key.into(), value);
     }
 
+    /// Returns a reference to a variable's value.
     pub fn get(&self, key: &str) -> Option<&Text<'content>> {
         self.vars.get(key)
     }
 
+    /// Clears the node, removing all registered variables.
     pub fn clear(&mut self) {
         self.make_mut().clear();
     }
@@ -293,16 +298,18 @@ impl<'a> HtmlEmitter<'a> {
 
         // opening tag
         write!(writer, "{}<{}", indent, name)?;
-        // args
-        let (contents, args) = node.entries().iter().partition::<Vec<_>, _>(|arg| {
-            matches!(
-                arg.name().map(|ident| ident.value()),
-                Some("content" | "text")
-            )
-        });
 
-        let args = args
-            .iter()
+        let mut entries = node.entries().to_vec();
+
+        let mut contents = None;
+        // If the last one is a bare string arg, use it as contents.
+        if matches!(entries.last(), Some(entry) if entry.name().is_none()) {
+            let entry = entries.remove(entries.len()-1);
+            contents = Some(entry);
+        }
+
+        let args = entries
+            .into_iter()
             .map(|arg| self.vars.expand_string(&arg.to_string()).into_owned())
             .collect::<Vec<_>>()
             .join("");
@@ -314,12 +321,11 @@ impl<'a> HtmlEmitter<'a> {
             self.write_line(writer)?;
         } else {
             write!(writer, ">")?;
-            // Inline `text`/`content` param
-            if let Some(inline) = contents.last() {
-                write!(writer, "{}", self.vars.expand_value(inline.value()))?;
+            if let Some(contents) = contents {
+                write!(writer, "{}", self.vars.expand_value(contents.value()))?;
             }
             // Children
-            if let Some(doc) = node.children() {
+            else if let Some(doc) = node.children() {
                 self.write_line(writer)?;
                 let mut value = self.subemitter();
                 value.emit(doc, writer)?;
