@@ -103,7 +103,9 @@ fn main() -> miette::Result<()> {
     let contents = if input_filename == Path::new("-") {
         uses_stdin = true;
         let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf).into_diagnostic()?;
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .into_diagnostic()?;
         buf
     } else {
         std::fs::read_to_string(&input_filename)

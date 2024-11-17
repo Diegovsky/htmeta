@@ -304,7 +304,7 @@ impl<'a> HtmlEmitter<'a> {
         let mut contents = None;
         // If the last one is a bare string arg, use it as contents.
         if matches!(entries.last(), Some(entry) if entry.name().is_none()) {
-            let entry = entries.remove(entries.len()-1);
+            let entry = entries.remove(entries.len() - 1);
             contents = Some(entry);
         }
 

@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use htmeta::{
-    kdl::KdlNode, EmitResult, EmitStatus, IPlugin, PluginContext
-};
+use htmeta::{kdl::KdlNode, EmitResult, EmitStatus, IPlugin, PluginContext};
 
 #[derive(Debug, Default, Clone)]
 pub struct TemplatePlugin {
@@ -17,7 +15,9 @@ impl TemplatePlugin {
         context: PluginContext,
     ) -> EmitResult<EmitStatus> {
         if node.children().is_some() {
-            return Err(format!("{name}: Template instantiations must not have bodies!"))?
+            return Err(format!(
+                "{name}: Template instantiations must not have bodies!"
+            ))?;
         }
         let mut subemitter = context.emitter.clone();
 
@@ -33,7 +33,12 @@ impl TemplatePlugin {
                     context.emitter.vars.expand_value(entry.value()),
                 ))
             }));
-        subemitter.emit(template.children().expect("Internal error: template tags must have children"), context.writer)?;
+        subemitter.emit(
+            template
+                .children()
+                .expect("Internal error: template tags must have children"),
+            context.writer,
+        )?;
         Ok(EmitStatus::Emmited)
     }
 }
@@ -54,7 +59,7 @@ impl IPlugin for TemplatePlugin {
     fn emit_node_mut(&mut self, node: &KdlNode, context: PluginContext) -> EmitResult<()> {
         let name = node.name().value();
         let Some(name) = name.strip_prefix('@') else {
-            return Err(format!("Unexpected tag in `emit_node_mut`: {name}"))?
+            return Err(format!("Unexpected tag in `emit_node_mut`: {name}"))?;
         };
         let template_name = node
             .get("name")
@@ -77,9 +82,9 @@ impl IPlugin for TemplatePlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use htmeta::emit_as_str;
     use htmeta::{HtmlEmitter, HtmlEmitterBuilder};
     use htmeta_auto_test::*;
-    use htmeta::emit_as_str;
 
     fn builder() -> HtmlEmitterBuilder {
         let mut builder = HtmlEmitter::builder();
