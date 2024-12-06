@@ -2,9 +2,17 @@ html {
     head {
     }
     body {
-        h1 text="Hello, world!"
-        br
-        p class="big" text="Not rendered" text="Rendered"
-        button disabled text="you can't press me"
+        h1 "Hello, world!"
+        br // line breaks
+        p class="big" attribute1 attribute2 "Rendered"
+        div {
+            p "I'm a child!"
+        }
+        /- p "Ignored paragraph"
+        // The last argument is the content,
+        // so, to create en empty disabled button,
+        // you must specify an empty string
+        button disabled ""
+        button disabled "you can't press me"
     }
 }

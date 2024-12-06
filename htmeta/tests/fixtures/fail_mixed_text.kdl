@@ -1,0 +1,10 @@
+html {
+    head {
+    }
+    body {
+        h1 "Hello, world!"
+        div "I have mixed content!" {
+            p "I'm a child!"
+        }
+    }
+}

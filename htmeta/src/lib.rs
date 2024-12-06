@@ -96,28 +96,37 @@ const VOID_TAGS: &[&str] = &[
 /// A builder for [`HtmlEmitter`]s.
 #[derive(Clone, Default)]
 pub struct HtmlEmitterBuilder {
-    indent: Indent,
+    indent: Option<Indent>,
     plugins: Vec<Plugin>,
 }
 
 impl HtmlEmitterBuilder {
-    /// Returns a new [`Self`] instance with a default indentation value of 4.
+    /// Returns a new [`Self`] instance. By default, each node is indented by `4` spaces.
+    /// To override the amount, check out [`Self::indent`].
     pub fn new() -> Self {
         Self {
-            indent: 4,
+            indent: Some(4),
             ..Self::default()
         }
     }
 
-    /// Sets the indentation amount. Implies pretty formatting.
+    /// Makes the indentation level follow the original document's for each node.
+    /// This is currently experimental.
+    pub fn follow_original_indent(&mut self) -> &mut Self {
+        self.indent = None;
+        self
+    }
+
+    /// Overrides the document indentation. That is, it always indentates
+    /// child nodes by `indent` spaces.
     pub fn indent(&mut self, indent: Indent) -> &mut Self {
-        self.indent = indent;
+        self.indent = indent.into();
         self
     }
 
     /// Disables indentation and newlines.
     pub fn minify(&mut self) -> &mut Self {
-        self.indent = 0;
+        self.indent = 0.into();
         self
     }
 
@@ -206,9 +215,8 @@ where
 /// let doc: KdlDocument = r#"
 /// html {
 ///     body {
-///         h1 {
-///             text "Title"
-///         }
+///         h1 "Title"
+///
 ///     }
 /// }"#.parse().unwrap();
 ///
@@ -220,8 +228,13 @@ where
 /// ```
 #[derive(Clone)]
 pub struct HtmlEmitter<'a> {
-    pub indent: Indent,
+    /// When fixed indentation is enabled, contains the amount of space
+    /// characters corresponding to one indentaion level.
+    pub indent: Option<Indent>,
+    /// Contains the depth of this emmiter, that is, how deep it is compared
+    /// to a root node
     pub current_level: Indent,
+    /// Contains a node's variables.
     pub vars: Vars<'a>,
     plugins: Vec<Plugin>,
 }
@@ -244,14 +257,14 @@ impl<'a> HtmlEmitter<'a> {
         }
     }
 
-    /// Returns `true` if in pretty mode, `false` otherwise.
-    pub fn is_pretty(&self) -> bool {
-        self.indent > 0
+    /// Returns `true` if in minify mode, `false` otherwise.
+    pub fn is_minify(&self) -> bool {
+        self.indent == Some(0)
     }
 
-    /// Convenience function that writes a newline if in pretty mode.
+    /// Convenience function that writes a newline if not in `minify` mode.
     pub fn write_line(&self, writer: Writer) -> EmitResult {
-        if self.is_pretty() {
+        if !self.is_minify() {
             writeln!(writer)?;
         }
         Ok(())
@@ -266,8 +279,16 @@ impl<'a> HtmlEmitter<'a> {
     /// let emitter = HtmlEmitter::builder().indent(4).build();
     /// assert_eq!(emitter.indent(), "");
     /// ```
-    pub fn indent(&self) -> String {
-        " ".repeat(self.current_level * self.indent)
+    pub fn indent(&self, node: &KdlNode) -> String {
+        match self.indent {
+            Some(indent) => " ".repeat(self.current_level * indent),
+            None => {
+                return node
+                    .format()
+                    .map(|fmt| fmt.leading.clone())
+                    .unwrap_or_default()
+            }
+        }
     }
 
     /// Emits a compound `HTML` tag named `name`, with `indent` as indentation, using `node` for
@@ -282,7 +303,7 @@ impl<'a> HtmlEmitter<'a> {
     ///
     /// let emitter = HtmlEmitter::builder().minify().build();
     /// // Creates a simple paragraph node
-    /// let node = r#"p id="paragraph" { text "Hello, world!" }"#.parse::<KdlNode>().unwrap();
+    /// let node = r#"p id="paragraph" "Hello, world!""#.parse::<KdlNode>().unwrap();
     /// let mut result = Vec::<u8>::new();
     /// emitter.emit_tag(&node, node.name().value(), "", &mut result).unwrap();
     /// assert_eq!(result, br#"<p id="paragraph">Hello, world!</p>"#);
@@ -306,6 +327,10 @@ impl<'a> HtmlEmitter<'a> {
         if matches!(entries.last(), Some(entry) if entry.name().is_none()) {
             let entry = entries.remove(entries.len() - 1);
             contents = Some(entry);
+
+            if node.children().is_some() {
+                return Err("Nodes with inline text and children aren't allowed.")?;
+            }
         }
 
         let args = entries
@@ -322,6 +347,7 @@ impl<'a> HtmlEmitter<'a> {
         } else {
             write!(writer, ">")?;
             if let Some(contents) = contents {
+                // If node has children and text, print each in their own line
                 write!(writer, "{}", self.vars.expand_value(contents.value()))?;
             }
             // Children
@@ -412,9 +438,7 @@ impl<'a> HtmlEmitter<'a> {
     /// let doc: KdlDocument = r#"
     ///     html {
     ///         body {
-    ///             h1 {
-    ///                 text "Title"
-    ///             }
+    ///             h1 "Title"
     ///         }
     ///     }"#.parse().unwrap();
     /// // Creates an emitter with an indentation level of 4.
@@ -424,10 +448,9 @@ impl<'a> HtmlEmitter<'a> {
     /// emitter.emit(&doc, &mut file).unwrap();
     /// ```
     pub fn emit<'b: 'a>(&'b mut self, document: &'b KdlDocument, writer: Writer<'b>) -> EmitResult {
-        let indent = self.indent();
-
         for node in document.nodes() {
             let name = node.name().value();
+            let indent = self.indent(node);
 
             // variable node
             if name.starts_with("$")
@@ -439,9 +462,12 @@ impl<'a> HtmlEmitter<'a> {
             }
 
             // text/content node
-            if (name == "text" || name == "content")
+            if (name == "-" || name == "text")
                 && let Some(content) = node.get(0)
             {
+                if name == "text" {
+                    eprintln!("`text` nodes are now deprecated. Please use the new syntax.\n")
+                }
                 self.emit_text_node(&indent, content, writer)?;
                 continue;
             }
@@ -464,51 +490,13 @@ impl<'a> HtmlEmitter<'a> {
 /// This function is used by tests.
 /// As to not cause dependency problems, this function is defined here instead
 /// of `htmeta-auto-tests`, hence why it is hidden.
-pub fn emit_as_str(builder: &HtmlEmitterBuilder, input: &str) -> String {
+pub fn emit_as_str(builder: &HtmlEmitterBuilder, input: &str) -> EmitResult<String> {
     let doc: kdl::KdlDocument = input.parse().expect("Failed to parse as kdl doc");
     let mut buf = Vec::<u8>::new();
     let mut emitter = builder.build();
-    emitter.emit(&doc, &mut buf).expect("Failed to emit HTML");
-    String::from_utf8(buf).expect("Invalid utf8 found")
+    emitter.emit(&doc, &mut buf)?;
+    Ok(String::from_utf8(buf).expect("Invalid utf8 found"))
 }
 
 #[cfg(test)]
-pub mod tests {
-    use super::*;
-    use htmeta_auto_test::*;
-
-    auto_html_test!(basic_test);
-    auto_html_test!(basic_test2);
-    auto_html_test!(basic_var);
-    auto_html_test!(var_scopes);
-
-    fn minified() -> HtmlEmitterBuilder {
-        let mut builder = HtmlEmitter::builder();
-        builder.minify();
-        builder
-    }
-
-    auto_html_test!(minified_basic, minified());
-    auto_html_test!(minified_var_scopes, minified());
-
-    #[derive(Clone)]
-    struct ShouterPlugin;
-
-    impl IPlugin for ShouterPlugin {
-        fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<EmitStatus> {
-            let name = node.name().value();
-            context
-                .emitter
-                .emit_tag(node, &name.to_uppercase(), context.indent, context.writer)?;
-            Ok(EmitStatus::Emmited)
-        }
-    }
-
-    fn with_plugin() -> HtmlEmitterBuilder {
-        let mut builder = HtmlEmitter::builder();
-        builder.add_plugin(ShouterPlugin);
-        builder
-    }
-
-    auto_html_test!(shouter_basic, with_plugin());
-}
+pub mod tests;

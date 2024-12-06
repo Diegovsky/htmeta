@@ -2,8 +2,6 @@ html {
     head {
     }
     body {
-        h1 {
-            text "Hello, world!"
-        }
+        h1 "Hello, world!"
     }
 }

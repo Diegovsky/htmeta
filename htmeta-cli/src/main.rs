@@ -52,6 +52,7 @@ impl Args {
             match arg {
                 Long("minify") | Short('m') => drop(builder.minify()),
                 Long("tab-size") | Short('t') => drop(builder.indent(parser.value()?.parse()?)),
+                Long("document-formatting") | Short('D') => drop(builder.follow_original_indent()),
                 Value(value) if input_filename.is_none() => {
                     input_filename = Some(PathBuf::from(value))
                 }

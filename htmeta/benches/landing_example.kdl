@@ -7,11 +7,11 @@ html {
     }
     body class="grid" {
         @template name=nav-item {
-            a href="$link" class="$class" text="$text $var"
+            a href="$link" class="$class" "$text $var"
         }
         @template name=card {
             div class="p-4 text-zinc-100 bg-zinc-800 rounded-[15px]" {
-                @nav-item text="$text" class="bg-amber-500"
+                @nav-item class="bg-amber-500" "$text" 
             }
         }
         nav class="
@@ -19,12 +19,10 @@ html {
             bg-slate-200 text-lg
         " \
         {
-            @nav-item link="#" text="Home"
-            @nav-item link="#" text="Projects"
+            @nav-item link="#" "Home"
+            @nav-item link="#" "Projects"
         }
-        h1 class="text-3xl text-center font-bold" {
-            text "Hello world!"
-        }
+        h1 class="text-3xl text-center font-bold" "Hello world!"
         @card text="hi"
     }
 }

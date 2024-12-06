@@ -1,7 +1,5 @@
 html {
     body {
-        h1 {
-            text "Hello, World!"
-        }
+        h1 "Hello, World!"
     }
 }

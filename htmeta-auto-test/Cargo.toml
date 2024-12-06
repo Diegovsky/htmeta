@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+ron = "0.8.1"
 similar = "2.6.0"
 similar-asserts = "1.5.0"

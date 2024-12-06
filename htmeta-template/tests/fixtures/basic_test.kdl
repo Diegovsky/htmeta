@@ -3,9 +3,7 @@ html {
     }
     body {
         @template name="simple" {
-            p {
-                text "Hello, world!"
-            }
+            p "Hello, world!"
         }
         @simple
     }

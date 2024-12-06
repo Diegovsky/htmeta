@@ -1,21 +1,13 @@
 html {
     body {
         $text "Hello, World"
-        h1 {
-            text "$text"
-        }
+        h1 "$text"
         div {
             $text "$text!"
-            p {
-                text "$text"
-            }
+            p "$text"
             $text "Olá, mundo!"
-            p {
-                text "$text"
-            }
+            p "$text"
         }
-        h2 {
-            text "$text"
-        }
+        h2 "$text"
     }
 }

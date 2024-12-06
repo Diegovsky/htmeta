@@ -20,6 +20,7 @@ html-escape = "0.2.13"
 regex = "1.10.6"
 kdl = {workspace = true}
 dyn-clone = "1.0.17"
+serde = { version = "1.0.215", features = ["derive"] }
 
 [dev-dependencies]
 similar = "2.6.0"
