@@ -1,0 +1,47 @@
+name: Build and Upload on Release
+
+on:
+  release:
+    types:
+      - created
+
+jobs:
+  build-and-upload:
+    name: Build and Upload Binaries
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Step 2: Set up Rust using dtolnay/rust-toolchain
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
+
+      # Step 3: Build in debug mode
+      - name: Build Debug Binary
+        run: cargo build --target x86_64-unknown-linux-gnu
+
+      # Step 4: Build in release mode
+      - name: Build Release Binary
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      # Step 5: Archive the binaries
+      - name: Create Artifact Archive
+        run: |
+          mkdir artifacts
+          cp target/x86_64-unknown-linux-gnu/debug/* artifacts/ || true
+          cp target/x86_64-unknown-linux-gnu/release/* artifacts/ || true
+        shell: bash
+
+      # Step 6: Upload binaries to the release
+      - name: Upload Binaries to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
