@@ -5,44 +5,43 @@ As [`KDL`] is already very similar to `HTML` semantically, `htmeta` only adds 2 
  - A way to differentiate true `text` content to be shown in `HTML`.
  - Variables to reduce repetition.
 
+## Text arguments
+If a node is only meant to have text content, you can specify content as the node's last argument!
+```kdl
+html {
+    body {
+        h1 "Title"
+    }
+}
+```
+
+Results in:
+
+```html
+<html>
+    <body>
+        <h1>Title</h1>
+    </body>
+</html>
+```
+
+Note that theses nodes can't have children! If you need to mix children with text, take a look at the next section.
+
 ## Text nodes
-Text nodes are creatively named `text` (or `content`) and they can only have one positional
+Text nodes are named `-` and they can only have one positional
 argument, which is the text to be directly pasted into the resulting `HTML`.
 
 Example:
 ```kdl
 html {
     body {
-        h1 {
-            text "Title"
+        h1 "Title"
+        p {
+            - "Hi, I'm inline text!"
+            em "I'm emphasized inline text."
+            - "I'm post-emphasized inline text"
         }
-    }
-}
-```
-
-Results in:
-```html
-<html>
-    <body>
-        <h1>
-            Title
-        </h1>
-    </body>
-</html>
-```
-
-### Text attributes
-As it soon gets verbose to open tags just to add a `text` node, a `text` (or `content`) attribute was added for quick, short content: 
-
-```kdl
-html {
-    body {
-        h1 text="Title"
-        p text="I'm a paragraph!"
-        button text="I'm a button!"
-        div {
-            content "You can still have text nodes if you want!"
-        }
+        
     }
 }
 ```
@@ -52,16 +51,14 @@ Results in:
 <html>
     <body>
         <h1>Title</h1>
-        <p>I'm a paragraph!</p>
-        <button>I'm a button!</button>
-        <div>
-            You can still have text nodes if you want!
-        </div>
+        <p>
+            Hi, I'm inline text!
+            <em>I'm emphasized inline text.</em>
+            I'm post-emphasized inline text
+        </p>
     </body>
 </html>
-
 ```
-
 
 ## Variables
 If you ever used CSS-based frameworks like `TailwindCSS` or `Bootstrap`, you
