@@ -33,7 +33,7 @@ jobs:
       # Step 5: Upload the binaries
       - name: Upload Binaries
         run: |
-          mkdir artifacts
+          mkdir binaries
           cp target/x86_64-unknown-linux-gnu/debug/htmeta binaries/x64-debug-linux-htmeta || true
           cp target/x86_64-unknown-linux-gnu/release/htmeta binaries/x64-release-linux-htmeta || true
         shell: bash
