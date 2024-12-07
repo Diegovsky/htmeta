@@ -4,6 +4,7 @@ on:
   release:
     types:
       - created
+  workflow_dispatch: # Enable manual triggering of this workflow
 
 jobs:
   build-and-upload:
