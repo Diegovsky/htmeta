@@ -27,7 +27,7 @@ jobs:
 
       # Step 4: Build in release mode
       - name: Build Release Binary
-        run: cargo build --target --release x86_64-unknown-linux-gnu -p htmeta-cli
+        run: cargo build --release --target x86_64-unknown-linux-gnu -p htmeta-cli
 
       # Step 5: Upload the binaries
       - name: Upload Binaries
