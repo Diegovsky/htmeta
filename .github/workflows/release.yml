@@ -1,9 +1,10 @@
 name: Build and Upload on new Tag
 
+
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types:
+      - created
 
 jobs:
   build-and-upload:
@@ -13,7 +14,7 @@ jobs:
     steps:
       # Step 1: Checkout the repository
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # Step 2: Set up Rust using dtolnay/rust-toolchain
       - name: Set up Rust
@@ -33,14 +34,14 @@ jobs:
       - name: Upload Binaries
         run: |
           mkdir artifacts
-          cp target/x86_64-unknown-linux-gnu/debug/htmeta artifacts/x64-debug-linux-htmeta || true
-          cp target/x86_64-unknown-linux-gnu/release/htmeta artifacts/x64-release-linux-htmeta || true
+          cp target/x86_64-unknown-linux-gnu/debug/htmeta binaries/x64-debug-linux-htmeta || true
+          cp target/x86_64-unknown-linux-gnu/release/htmeta binaries/x64-release-linux-htmeta || true
         shell: bash
 
-      # Step 6: Upload binaries
-      - name: Upload Binaries
-        uses: actions/upload-artifact@v4
+      # Step 2: Upload Binaries to Release
+      - name: Upload Binaries to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: binaries
-          path: |
-            artifacts/*
+          files: binaries/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
