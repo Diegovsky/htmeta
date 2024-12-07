@@ -4,7 +4,6 @@ on:
   release:
     types:
       - created
-  workflow_dispatch: # Enable manual triggering of this workflow
 
 jobs:
   build-and-upload:
@@ -34,8 +33,8 @@ jobs:
       - name: Create Artifact Archive
         run: |
           mkdir artifacts
-          cp target/x86_64-unknown-linux-gnu/debug/* artifacts/ || true
-          cp target/x86_64-unknown-linux-gnu/release/* artifacts/ || true
+          cp target/x86_64-unknown-linux-gnu/debug/htmeta artifacts/x64-debug-linux-htmeta || true
+          cp target/x86_64-unknown-linux-gnu/release/htmeta artifacts/x64-release-linux-htmeta || true
         shell: bash
 
       # Step 6: Upload binaries to the release
