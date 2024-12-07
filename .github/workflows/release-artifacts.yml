@@ -13,13 +13,13 @@ jobs:
     steps:
       # Step 1: Download Artifacts from Previous Workflow
       - name: Download Binaries
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: binaries
 
       # Step 2: Upload Binaries to Release
       - name: Upload Binaries to GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: binaries/*
         env:
