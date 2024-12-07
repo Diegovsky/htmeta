@@ -20,7 +20,6 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: stable
           targets: x86_64-unknown-linux-gnu
 
       # Step 3: Build in debug mode
