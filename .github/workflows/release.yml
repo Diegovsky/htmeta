@@ -1,10 +1,9 @@
-name: Build and Upload on Release
+name: Build and Upload on new Tag
 
 on:
-  release:
-    types:
-      - created
-  workflow_dispatch: # Enable manual triggering of this workflow
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   build-and-upload:
@@ -18,31 +17,30 @@ jobs:
 
       # Step 2: Set up Rust using dtolnay/rust-toolchain
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: stable
           targets: x86_64-unknown-linux-gnu
 
       # Step 3: Build in debug mode
       - name: Build Debug Binary
-        run: cargo build --target x86_64-unknown-linux-gnu
+        run: cargo build --target x86_64-unknown-linux-gnu -p htmeta-cli
 
       # Step 4: Build in release mode
       - name: Build Release Binary
-        run: cargo build --release --target x86_64-unknown-linux-gnu
+        run: cargo build --release --target x86_64-unknown-linux-gnu -p htmeta-cli
 
-      # Step 5: Archive the binaries
-      - name: Create Artifact Archive
+      # Step 5: Upload the binaries
+      - name: Upload Binaries
         run: |
           mkdir artifacts
-          cp target/x86_64-unknown-linux-gnu/debug/* artifacts/ || true
-          cp target/x86_64-unknown-linux-gnu/release/* artifacts/ || true
+          cp target/x86_64-unknown-linux-gnu/debug/htmeta artifacts/x64-debug-linux-htmeta || true
+          cp target/x86_64-unknown-linux-gnu/release/htmeta artifacts/x64-release-linux-htmeta || true
         shell: bash
 
-      # Step 6: Upload binaries to the release
-      - name: Upload Binaries to Release
-        uses: softprops/action-gh-release@v2
+      # Step 6: Upload binaries
+      - name: Upload Binaries
+        uses: actions/upload-artifact@v4
         with:
-          files: artifacts/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: binaries
+          path: |
+            artifacts/*
