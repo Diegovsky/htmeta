@@ -1,5 +1,5 @@
-use std::fmt::{Debug, Display};
 use serde::{Deserialize, Serialize};
+use std::fmt::{Debug, Display};
 
 /// The crate's error type.
 ///
@@ -26,8 +26,8 @@ use Error::*;
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (UserError {message: a}, UserError {message: b}) => a == b,
-            _ => false
+            (UserError { message: a }, UserError { message: b }) => a == b,
+            _ => false,
         }
     }
 }
@@ -64,6 +64,8 @@ impl From<String> for Error {
 
 impl From<&'static str> for Error {
     fn from(value: &'static str) -> Self {
-        UserError { message: value.into() }
+        UserError {
+            message: value.into(),
+        }
     }
 }

@@ -60,14 +60,19 @@ macro_rules! auto_html_test_fail {
             let result = emit_as_str(&builder, input).unwrap_err();
             #[cfg(not(feature = "test_gen"))]
             {
-                let output: Error = ron::from_str(include_str!(fixture_path!($name, ".ron"))).unwrap();
+                let output: Error =
+                    ron::from_str(include_str!(fixture_path!($name, ".ron"))).unwrap();
                 $crate::assert_eq!(output, result);
             }
 
             #[cfg(feature = "test_gen")]
             {
                 let output = fixture_path!($name, ".ron");
-                std::fs::write(output, $crate::ron::ser::to_string_pretty(&result, Default::default()).unwrap()).expect("Failed to save file");
+                std::fs::write(
+                    output,
+                    $crate::ron::ser::to_string_pretty(&result, Default::default()).unwrap(),
+                )
+                .expect("Failed to save file");
             }
         }
     };

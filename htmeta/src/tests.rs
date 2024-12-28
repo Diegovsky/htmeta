@@ -37,4 +37,3 @@ fn with_plugin() -> HtmlEmitterBuilder {
 }
 
 auto_html_test!(shouter_basic, with_plugin());
-
