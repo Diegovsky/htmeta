@@ -30,9 +30,9 @@ Here's the same page written in both `HTML` and `htmeta`:
 !DOCTYPE html
 html {
     body {
-        h1 text="Welcome!"
+        h1 "Welcome!"
         p {
-            text "This is an example page. Very cool!"
+            - "This is an example page. Very cool!"
         }
     }
 }
