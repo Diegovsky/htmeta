@@ -282,12 +282,10 @@ impl<'a> HtmlEmitter<'a> {
     pub fn indent(&self, node: &KdlNode) -> String {
         match self.indent {
             Some(indent) => " ".repeat(self.current_level * indent),
-            None => {
-                return node
-                    .format()
-                    .map(|fmt| fmt.leading.clone())
-                    .unwrap_or_default()
-            }
+            None => node
+                .format()
+                .map(|fmt| fmt.leading.clone())
+                .unwrap_or_default(),
         }
     }
 
