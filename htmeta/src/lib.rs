@@ -426,6 +426,16 @@ impl<'a> HtmlEmitter<'a> {
         Ok(())
     }
 
+    /// Converts `content` into an unquoted string and writes its contents directly to the `writer`,
+    /// without any escaping.
+    ///
+    /// Note that $variables are still expanded.
+    pub fn emit_raw_text(&self, indent: &str, content: &KdlValue, writer: Writer) -> EmitResult {
+        write!(writer, "{}{}", indent, &self.vars.expand_value(content))?;
+        self.write_line(writer)?;
+        Ok(())
+    }
+
     /// Emits the corresponding `HTML` into the `writer`. The emitter can be re-used after this.
     ///
     /// # Examples:
@@ -456,6 +466,12 @@ impl<'a> HtmlEmitter<'a> {
             {
                 let value = self.vars.expand_value(val);
                 self.vars.insert(&name[1..], value);
+                continue;
+            }
+            if name == "_"
+                && let Some(content) = node.get(0)
+            {
+                self.emit_raw_text(&indent, content, writer)?;
                 continue;
             }
 
