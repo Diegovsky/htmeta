@@ -4,8 +4,5 @@ members = ["htmeta", "htmeta-auto-test","htmeta-cli", "htmeta-template"]
 resolver = "2"
 
 [workspace.dependencies]
-kdl = "6.0.0-alpha.1"
-
-[patch.'crates-io']
-kdl = { git = "https://github.com/kdl-org/kdl-rs/", rev = "a641995293ffa93c7958f4f5462bb2aa5c8a2c45"}
+kdl = "6.3.3"
 

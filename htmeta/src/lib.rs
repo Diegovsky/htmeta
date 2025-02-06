@@ -1,5 +1,35 @@
 #![feature(let_chains)]
-#![doc = include_str!("../../README.md")]
+/// ![GitHub Release](https://img.shields.io/github/v/release/Diegovsky/htmeta)
+/// ![GitHub Repo stars](https://img.shields.io/github/stars/Diegovsky/htmeta)
+/// ![GitHub Forks](https://img.shields.io/github/forks/Diegovsky/htmeta)
+/// ![GitHub Contributors](https://img.shields.io/github/contributors/Diegovsky/htmeta)
+///
+/// This crate allows you to transform/transpile/compile a [`KDL`] document into `HTML`.
+/// Since the `kdl` dependency is unavoidable, it is re-exported for convenience as [`kdl`].
+///
+/// # Basic Example
+/// The following function can be used to turn `htmeta` strings into `HTML`:
+/// ```
+/// use htmeta::{HtmlEmitter};
+/// use htmeta::kdl;
+/// use std::path::PathBuf;
+/// fn emit_str(text: &str) -> String {
+///     let doc = text.parse::<kdl::KdlDocument>().unwrap();
+///     let builder = HtmlEmitter::builder();
+///     let mut emitter = builder.build(PathBuf::from("<string>"));
+///     let mut buf = Vec::new();
+///     emitter.emit(&doc, &mut buf).unwrap();
+///     String::from_utf8(buf).unwrap()
+/// }
+///
+/// assert_eq!(emit_str(r#"body { p "Hi!"  }"#), r#"<body>
+///     <p>Hi!</p>
+/// </body>
+/// "#);
+/// ```
+///
+/// [`KDL`]: https://kdl.dev
+///
 
 macro_rules! re {
     ($name:ident, $e:expr) => {
@@ -9,9 +39,10 @@ macro_rules! re {
     };
 }
 
-use std::{borrow::Cow, collections::HashMap, io::Write, rc::Rc};
+use std::{borrow::Cow, collections::HashMap, io::Write, path::PathBuf, rc::Rc};
 
 use dyn_clone::DynClone;
+/// A helpful re-export to our `kdl` library.
 pub use kdl;
 
 use kdl::{KdlDocument, KdlNode, KdlValue};
@@ -138,12 +169,13 @@ impl HtmlEmitterBuilder {
 
     /// Creates a new [`HtmlEmitter`]. You should re-use this builder to create emitters
     /// efficiently.
-    pub fn build<'a>(&self) -> HtmlEmitter<'a> {
+    pub fn build<'a>(&self, filename: impl Into<Option<PathBuf>>) -> HtmlEmitter<'a> {
         HtmlEmitter {
             current_level: 0,
             indent: self.indent,
             plugins: self.plugins.clone(),
             vars: Default::default(),
+            filename: filename.into().map(|f| Rc::new(f)),
         }
     }
 }
@@ -221,7 +253,7 @@ where
 /// }"#.parse().unwrap();
 ///
 /// // Creates an emitter with an indentation level of 4.
-/// let mut emitter = HtmlEmitter::builder().indent(4).build();
+/// let mut emitter = HtmlEmitter::builder().indent(4).build(Some(Default::default()));
 ///
 /// // Emits html to the terminal.
 /// emitter.emit(&doc, &mut std::io::stdout()).unwrap();
@@ -236,6 +268,8 @@ pub struct HtmlEmitter<'a> {
     pub current_level: Indent,
     /// Contains a node's variables.
     pub vars: Vars<'a>,
+
+    pub filename: Option<Rc<PathBuf>>,
     plugins: Vec<Plugin>,
 }
 
@@ -276,8 +310,8 @@ impl<'a> HtmlEmitter<'a> {
     /// # Example
     /// ```rust
     /// use htmeta::HtmlEmitter;
-    /// let emitter = HtmlEmitter::builder().indent(4).build();
-    /// assert_eq!(emitter.indent(), "");
+    /// let emitter = HtmlEmitter::builder().indent(4).build(Some(Default::default()));
+    /// assert_eq!(emitter.indent(&htmeta::kdl::KdlNode::new("")), "");
     /// ```
     pub fn indent(&self, node: &KdlNode) -> String {
         match self.indent {
@@ -299,7 +333,7 @@ impl<'a> HtmlEmitter<'a> {
     /// use htmeta::HtmlEmitter;
     /// use htmeta::kdl::KdlNode;
     ///
-    /// let emitter = HtmlEmitter::builder().minify().build();
+    /// let emitter = HtmlEmitter::builder().minify().build(Some(Default::default()));
     /// // Creates a simple paragraph node
     /// let node = r#"p id="paragraph" "Hello, world!""#.parse::<KdlNode>().unwrap();
     /// let mut result = Vec::<u8>::new();
@@ -315,14 +349,18 @@ impl<'a> HtmlEmitter<'a> {
     ) -> EmitResult {
         let is_void = VOID_TAGS.contains(&name);
 
+        if is_void && node.children().is_some() {
+            return Err("Void tags can't have children")?;
+        }
+
         // opening tag
         write!(writer, "{}<{}", indent, name)?;
 
         let mut entries = node.entries().to_vec();
 
         let mut contents = None;
-        // If the last one is a bare string arg, use it as contents.
-        if matches!(entries.last(), Some(entry) if entry.name().is_none()) {
+        // If the last one is a string arg, use it as contents.
+        if !is_void && matches!(entries.last(), Some(entry) if entry.name().is_none()) {
             let entry = entries.remove(entries.len() - 1);
             contents = Some(entry);
 
@@ -407,10 +445,10 @@ impl<'a> HtmlEmitter<'a> {
     /// ```
     /// use kdl::KdlValue;
     /// use htmeta::HtmlEmitter;
-    /// let emitter = HtmlEmitter::builder().indent(4).build();
+    /// let emitter = HtmlEmitter::builder().indent(4).build(Some(Default::default()));
     /// let mut writer = Vec::<u8>::new();
     /// // Usually this value is given to you by other functions.
-    /// let indent = emitter.indent();
+    /// let indent = ""; // no indentation
     /// let value = KdlValue::String("I'm text".into());
     /// emitter.emit_text_node(&indent, &value, &mut writer).unwrap();
     /// assert_eq!(writer, b"I'm text\n");
@@ -450,7 +488,7 @@ impl<'a> HtmlEmitter<'a> {
     ///         }
     ///     }"#.parse().unwrap();
     /// // Creates an emitter with an indentation level of 4.
-    /// let mut emitter = HtmlEmitter::builder().indent(4).build();
+    /// let mut emitter = HtmlEmitter::builder().indent(4).build(Some(Default::default()));
     /// // You should wrap this with a `BufWriter` for actual use.
     /// let mut file = std::fs::File::create("index.html").unwrap();
     /// emitter.emit(&doc, &mut file).unwrap();
@@ -507,7 +545,7 @@ impl<'a> HtmlEmitter<'a> {
 pub fn emit_as_str(builder: &HtmlEmitterBuilder, input: &str) -> EmitResult<String> {
     let doc: kdl::KdlDocument = input.parse().expect("Failed to parse as kdl doc");
     let mut buf = Vec::<u8>::new();
-    let mut emitter = builder.build();
+    let mut emitter = builder.build(PathBuf::from("<string>"));
     emitter.emit(&doc, &mut buf)?;
     Ok(String::from_utf8(buf).expect("Invalid utf8 found"))
 }

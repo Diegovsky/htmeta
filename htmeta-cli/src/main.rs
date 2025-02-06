@@ -114,7 +114,7 @@ fn main() -> miette::Result<()> {
             .with_context(|| format!("Could not open file {}.", input_filename.display()))?
     };
     let doc = contents.parse::<KdlDocument>()?;
-    let mut emitter = builder.build();
+    let mut emitter = builder.build(input_filename.clone());
 
     // Dump to stdio
     let mut file: &mut dyn Write = if uses_stdin || output_filename == Some("-".into()) {
