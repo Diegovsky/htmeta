@@ -46,6 +46,7 @@ use dyn_clone::DynClone;
 pub use kdl;
 
 use kdl::{KdlDocument, KdlNode, KdlValue};
+use plugins::{EmitStatus, IPlugin, Plugin, PluginContext};
 use regex::Captures;
 
 /// Convenient alias for a [`std::io::Write`] mutable reference.
@@ -60,62 +61,10 @@ pub type EmitResult<T = ()> = Result<T, Error>;
 /// use this instead of the type it is aliasing!
 pub type Indent = usize;
 
-/// Information that plugins can use to change what is being emitted.
-///
-/// Check out [`HtmlEmitter`] for more information!
-pub struct PluginContext<'a, 'b: 'a> {
-    /// Pre-computed indentation from the current level.
-    pub indent: &'a str,
-    /// The [`Writer`] handle we're currently emitting into.
-    pub writer: &'a mut Writer<'b>,
-    /// A handle to the current node's emitter.
-    pub emitter: &'a HtmlEmitter<'a>,
-}
-
-/// Information that plugins can use to change what is being emitted.
-///
-/// Check out [`HtmlEmitter`] for more information!
-pub struct PluginMutContext<'a, 'b: 'a> {
-    /// Pre-computed indentation from the current level.
-    pub indent: &'a str,
-    /// The [`Writer`] handle we're currently emitting into.
-    pub writer: &'a mut Writer<'b>,
-    /// A mutable handle to the current node's emitter.
-    pub emitter: &'a mut HtmlEmitter<'a>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum EmitStatus {
-    Skip,
-    Emmited,
-    NeedsMutation,
-}
-
-/// A trait that allows you to hook into `htmeta`'s emitter and extend it!
-pub trait IPlugin: DynClone {
-    fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<EmitStatus>;
-    fn emit_node_mut(&mut self, node: &KdlNode, context: PluginContext) -> EmitResult<()> {
-        let _ = (node, context);
-        unimplemented!("")
-    }
-}
-
-type Text<'b> = Cow<'b, str>;
-
-#[derive(Clone)]
-struct Plugin(Rc<dyn IPlugin>);
-
-impl Plugin {
-    pub fn new<P: IPlugin + 'static>(plugin: P) -> Self {
-        Self(Rc::new(plugin))
-    }
-
-    pub fn make_mut(&mut self) -> &mut dyn IPlugin {
-        dyn_clone::rc_make_mut(&mut self.0)
-    }
-}
+pub type Text<'b> = Cow<'b, str>;
 
 mod error;
+pub mod plugins;
 
 pub use error::Error;
 
@@ -189,10 +138,13 @@ pub struct Vars<'content> {
 }
 
 impl<'content> Vars<'content> {
+    pub fn new(map: VarMap<'content>) -> Self {
+        Self { vars: map.into() }
+    }
     /// Replaces all occurences of variables inside `text` and returns a new string.
     pub fn expand_string<'b>(&self, text: &'b str) -> Text<'b> {
         re!(VAR, r"\$(\w+)");
-        VAR.replace(text, |captures: &Captures| {
+        VAR.replace_all(text, |captures: &Captures| {
             self.vars
                 .get(&captures[1])
                 .map(ToString::to_string)
@@ -205,7 +157,7 @@ impl<'content> Vars<'content> {
     pub fn expand_value<'b>(&self, value: &'b KdlValue) -> Text<'b> {
         match value {
             KdlValue::String(content) => self.expand_string(content),
-            _ => todo!(),
+            rest => rest.to_string().into(),
         }
     }
 
@@ -227,6 +179,25 @@ impl<'content> Vars<'content> {
     pub fn clear(&mut self) {
         self.make_mut().clear();
     }
+
+    /// Returns an iterator of Key-Value pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (&Box<str>, &Text<'content>)> {
+        self.vars.iter()
+    }
+
+    fn unwrap(self) -> VarMap<'content> {
+        Rc::try_unwrap(self.vars).unwrap_or_else(|rc| (*rc).clone())
+    }
+
+    /// Turns all borrowed content into owned content
+    pub fn into_owned(self) -> Vars<'static> {
+        Vars::new(
+            self.unwrap()
+                .into_iter()
+                .map(|(k, v)| (k, v.into_owned().into()))
+                .collect(),
+        )
+    }
 }
 
 impl<'a, S> std::iter::Extend<(S, Text<'a>)> for Vars<'a>
@@ -236,6 +207,14 @@ where
     fn extend<T: IntoIterator<Item = (S, Text<'a>)>>(&mut self, iter: T) {
         self.make_mut()
             .extend(iter.into_iter().map(|(k, v)| (k.into(), v)))
+    }
+}
+
+impl<'a> std::iter::IntoIterator for Vars<'a> {
+    type Item = (Box<str>, Text<'a>);
+    type IntoIter = std::collections::hash_map::IntoIter<Box<str>, Text<'a>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.unwrap().into_iter()
     }
 }
 
@@ -365,13 +344,21 @@ impl<'a> HtmlEmitter<'a> {
             contents = Some(entry);
 
             if node.children().is_some() {
-                return Err("Nodes with inline text and children aren't allowed.")?;
+                return Err(format!(
+                    "[{}] Nodes with inline text and children aren't allowed. {:?}",
+                    node.name().value(),
+                    node.span()
+                ))?;
             }
         }
 
         let args = entries
             .into_iter()
-            .map(|arg| self.vars.expand_string(&arg.to_string()).into_owned())
+            .map(|entry| match entry.name() {
+                Some(name) => format!("{name}=\"{}\"", entry.value()),
+                None => format!("\"{}\"", entry.value()),
+            })
+            .map(|arg| self.vars.expand_string(&arg).into_owned())
             .collect::<Vec<_>>()
             .join("");
 
@@ -399,40 +386,44 @@ impl<'a> HtmlEmitter<'a> {
         Ok(())
     }
 
-    fn call_plugin(
-        &mut self,
-        node: &KdlNode,
-        indent: &str,
-        mut writer: Writer,
+    fn call_plugin<'b>(
+        &'b mut self,
+        node: &'b KdlNode,
+        indent: &'b str,
+        mut writer: Writer<'_>,
     ) -> EmitResult<bool> {
-        let mut needs_mut_plugin = None;
+        let mut needs_mut = None;
         for (i, plug) in self.plugins.iter().enumerate() {
-            let ctx = PluginContext {
-                indent,
-                emitter: self,
-                writer: &mut writer,
-            };
-            match plug.0.emit_node(node, ctx)? {
+            match plug.should_emit(node, self) {
                 EmitStatus::Skip => continue,
-                EmitStatus::Emmited => return Ok(true),
-                EmitStatus::NeedsMutation => {
-                    needs_mut_plugin = Some(i);
+                EmitStatus::Emit => {
+                    plug.emit_node(
+                        node,
+                        PluginContext {
+                            indent,
+                            writer: &mut writer,
+                            emitter: self,
+                        },
+                    )?;
+                    return Ok(true);
+                }
+                EmitStatus::EmitMut => {
+                    needs_mut = Some(i);
                     break;
                 }
             }
         }
-        if let Some(plugin_idx) = needs_mut_plugin {
-            // Remove plugin to respect ownership rules
-            let mut plugin = self.plugins.remove(plugin_idx);
-            let ctx = PluginContext {
-                indent,
-                emitter: self,
-                writer: &mut writer,
-            };
-            plugin.make_mut().emit_node_mut(node, ctx)?;
-            // Reinsert modified plugin
-            self.plugins.insert(plugin_idx, plugin);
-
+        if let Some(plug_id) = needs_mut {
+            let mut plug = self.plugins.remove(plug_id);
+            plug.make_mut().emit_node_mut(
+                node,
+                PluginContext {
+                    indent,
+                    emitter: self,
+                    writer: &mut writer,
+                },
+            )?;
+            self.plugins.insert(plug_id, plug);
             return Ok(true);
         }
         Ok(false)
@@ -493,7 +484,7 @@ impl<'a> HtmlEmitter<'a> {
     /// let mut file = std::fs::File::create("index.html").unwrap();
     /// emitter.emit(&doc, &mut file).unwrap();
     /// ```
-    pub fn emit<'b: 'a>(&'b mut self, document: &'b KdlDocument, writer: Writer<'b>) -> EmitResult {
+    pub fn emit<'b: 'a>(&mut self, document: &'b KdlDocument, writer: Writer<'b>) -> EmitResult {
         for node in document.nodes() {
             let name = node.name().value();
             let indent = self.indent(node);
@@ -532,9 +523,12 @@ impl<'a> HtmlEmitter<'a> {
             // Compound node, AKA, normal HTML tag.
             self.emit_tag(node, name, &indent, writer)?
         }
-        // Allows this instance to be reused
-        self.vars.clear();
         Ok(())
+    }
+
+    /// Clears all variables and allows this instance to be reused
+    pub fn clear(&mut self) {
+        self.vars.clear();
     }
 }
 

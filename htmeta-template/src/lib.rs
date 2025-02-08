@@ -1,14 +1,35 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use htmeta::{
-    kdl::{KdlDocument, KdlNode},
-    EmitResult, EmitStatus, IPlugin, PluginContext,
+    kdl::{KdlDocument, KdlEntry, KdlNode},
+    plugins::{EmitStatus, IPlugin, PluginContext},
+    EmitResult, HtmlEmitter,
 };
+
+mod utils;
+use utils::*;
 
 #[derive(Clone, Debug)]
 pub struct Template {
     node: KdlNode,
     params: Vec<String>,
+}
+
+macro_rules! cmds {
+    ($($name:ident = $val:expr);* $(;)?) => {
+        $(
+            pub const $name: &str = $val;
+        )*
+
+        // pub const COMMANDS: &[&str] = &[$($name),*];
+    };
+}
+
+cmds! {
+    IMPORT = "import";
+    TEMPLATE = "template";
+    INCLUDE = "include";
+    DBG = "dbg";
 }
 
 impl Template {
@@ -18,13 +39,8 @@ impl Template {
             return Err(format!("{name}: Template tags must have children!"))?;
         };
 
-        let params = match Self::get_special_node(children, "@params") {
-            Some(node) => node
-                .entries()
-                .iter()
-                .filter(|e| e.name().is_none())
-                .map(|e| e.value().to_string())
-                .collect(),
+        let params = match children.remove_child("@params") {
+            Some(node) => node.args().map(|e| e.to_string()).collect(),
             None => Default::default(),
         };
         Ok(Template {
@@ -32,14 +48,7 @@ impl Template {
             params,
         })
     }
-    fn get_special_node(children: &mut KdlDocument, key: &str) -> Option<KdlNode> {
-        let i = children
-            .nodes()
-            .iter()
-            .position(|node| node.name().value() == key)?;
-        Some(children.nodes_mut().remove(i))
-    }
-    fn is_property(&self, key: &str) -> bool {
+    fn is_param(&self, key: &str) -> bool {
         self.params.iter().find(|el| *el == key).is_some()
     }
 }
@@ -54,8 +63,8 @@ impl TemplatePlugin {
         &self,
         name: &str,
         node: &KdlNode,
-        context: PluginContext,
-    ) -> EmitResult<EmitStatus> {
+        context: PluginContext<&HtmlEmitter>,
+    ) -> EmitResult {
         if node.children().is_some() {
             return Err(format!(
                 "{name}: Template instantiations must not have bodies!"
@@ -63,28 +72,18 @@ impl TemplatePlugin {
         }
         let mut subemitter = context.emitter.clone();
 
-        let templates = &self.templates;
-        let Some(template) = templates.get(name) else {
-            return Ok(EmitStatus::Skip);
-        };
+        let template = &self.templates[name];
+
         // Duplicates the node's args into the emitter for instantiation
         // Also turns arguments into $0, $1, etc.
-        let mut current_index = 0usize;
-        subemitter.vars.extend(node.entries().iter().map(|entry| {
-            (
-                entry
-                    .name()
-                    // entry is a property
-                    .map(|e| Cow::Borrowed(e.value()))
-                    .unwrap_or_else(|| {
-                        // entry is an argument, calculate its id
-                        let id = current_index;
-                        current_index += 1;
-                        Cow::Owned(id.to_string())
-                    }),
-                context.emitter.vars.expand_value(entry.value()),
-            )
-        }));
+        subemitter
+            .vars
+            .extend(node.keyed_entries().map(|(key, value)| {
+                (
+                    Cow::<str>::from(key),
+                    context.emitter.vars.expand_value(value),
+                )
+            }));
 
         // Creates special variable `props` which contains all unused properties.
         let props = node
@@ -92,7 +91,7 @@ impl TemplatePlugin {
             .iter()
             .filter_map(|e| {
                 let name = e.name()?;
-                if template.is_property(name.value()) {
+                if template.is_param(name.value()) {
                     None
                 } else {
                     Some(e.to_string())
@@ -110,18 +109,30 @@ impl TemplatePlugin {
                 .expect("Internal error: template tags must have children"),
             context.writer,
         )?;
-        Ok(EmitStatus::Emmited)
+        Ok(())
     }
-    fn execute_command(
+    // fn execute_command(
+    //     &self,
+    //     command: &str,
+    //     node: &KdlNode,
+    //     context: &PluginContext,
+    // ) -> EmitResult {
+    //     match command {
+    //         _ => return Err(format!("Unexpected tag: {command}"))?,
+    //     }
+    //     Ok(())
+    // }
+    fn execute_command_mut(
         &mut self,
-        name: &str,
+        command: &str,
         node: &KdlNode,
-        context: &PluginContext,
+        context: &mut PluginContext<&mut HtmlEmitter>,
     ) -> EmitResult {
-        match name {
-            "template" => {
+        match command {
+            // registers a template
+            TEMPLATE => {
                 let template_name = node.get(0).or_else(|| node.get("name")).ok_or_else(|| {
-                    format!("{name}: Template tags must have a `name` parameter!")
+                    format!("{command}: Template tags must have a `name` parameter!")
                 })?;
                 let template_name = context
                     .emitter
@@ -131,58 +142,92 @@ impl TemplatePlugin {
                 let template = Template::new(&template_name, node);
                 self.templates.insert(template_name, template?);
             }
-            "import" => {
-                let template_name = node
+            // reads a file and executes commands
+            IMPORT | INCLUDE => {
+                let filename = node
                     .get(0)
-                    .ok_or_else(|| format!("{name}: Import tags must have path"))?
+                    .ok_or_else(|| format!("{command}: Import tags must have path"))?
                     .to_string();
-                let template_name = context
+                let filename = context
                     .emitter
                     .filename
                     .as_ref()
                     .and_then(|original_filename| original_filename.parent())
-                    .map(|dir| dir.join(&template_name))
-                    .unwrap_or_else(|| template_name.into());
-                if !template_name.exists() {
+                    .map(|dir| dir.join(&filename))
+                    .unwrap_or_else(|| filename.into());
+                if !filename.exists() {
                     return Err(format!(
                         "Failed to find file {}. Original file: {:?}",
-                        template_name.display(),
+                        filename.display(),
                         context.emitter.filename
                     ))?;
                 }
-                let doc = std::fs::read_to_string(template_name)?;
+                let doc = std::fs::read_to_string(filename)?;
                 let doc = doc.parse::<KdlDocument>().map_err(|e| e.to_string())?;
-                for node in doc.nodes() {
-                    if let Some(name) = node.name().value().strip_prefix("@") {
-                        // Read commands from the file
-                        self.execute_command(name, node, context)?;
+                if command == IMPORT {
+                    // Executes commands from the file, but keeping scope intact.
+                    for node in doc.nodes() {
+                        if let Some(name) = node.name().value().strip_prefix("@") {
+                            // Read commands from the file
+                            self.execute_command_mut(name, node, context)?;
+                        }
                     }
+                } else {
+                    // Straight up emits the file in-place
+                    let mut em = context.emitter.clone();
+                    em.emit(&doc, context.writer)?;
+                    // Copies variables into the current context;
+                    let vars = em.vars.into_owned();
+                    context.emitter.vars.extend(vars);
                 }
             }
-            _ => return Err(format!("Unexpected tag: {name}"))?,
+            _ => return Err(format!("Unexpected tag: {command}"))?,
         }
         Ok(())
     }
 }
 
 impl IPlugin for TemplatePlugin {
-    fn emit_node(&self, node: &KdlNode, context: PluginContext) -> EmitResult<EmitStatus> {
-        let name = node.name().value();
-        let Some(name) = name.strip_prefix('@') else {
-            return Ok(EmitStatus::Skip);
-        };
-        // Template registry command
-        match name {
-            "import" | "template" => Ok(EmitStatus::NeedsMutation),
-            _ => self.emit_template(name, node, context),
+    fn should_emit(&self, node: &KdlNode, emitter: &HtmlEmitter) -> EmitStatus {
+        let _ = emitter;
+        match node.command_name() {
+            None => EmitStatus::Skip,
+            Some(IMPORT | TEMPLATE | INCLUDE) => EmitStatus::EmitMut,
+            Some(DBG) => EmitStatus::Emit,
+            Some(template_name) => {
+                if self.templates.contains_key(template_name) {
+                    EmitStatus::Emit
+                } else {
+                    EmitStatus::Skip
+                }
+            }
         }
     }
-    fn emit_node_mut(&mut self, node: &KdlNode, context: PluginContext) -> EmitResult<()> {
-        let name = node.name().value();
-        let Some(name) = name.strip_prefix('@') else {
-            return Err(format!("Unexpected tag in `emit_node_mut`: {name}"))?;
+    fn emit_node(&self, node: &KdlNode, mut context: PluginContext<&HtmlEmitter>) -> EmitResult {
+        match node.command_name().unwrap() {
+            DBG => {
+                let mut node = KdlNode::new("code");
+                node.entries_mut()
+                    .push(KdlEntry::new(format!("{:#?}", context.emitter.vars)));
+                context
+                    .emitter
+                    .emit_tag(&node, "code", context.indent, &mut context.writer)
+            }
+            name => self.emit_template(name, node, context),
+        }
+    }
+    fn emit_node_mut(
+        &mut self,
+        node: &KdlNode,
+        mut context: PluginContext<&mut HtmlEmitter>,
+    ) -> EmitResult {
+        let Some(name) = node.command_name() else {
+            return Err(format!(
+                "Unexpected tag in `emit_node_mut`: {}",
+                node.name().value()
+            ))?;
         };
-        self.execute_command(name, node, &context)?;
+        self.execute_command_mut(name, node, &mut context)?;
         Ok(())
     }
 }

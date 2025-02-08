@@ -9,6 +9,8 @@ test_gen = []
 
 [dependencies]
 htmeta = { path = "../htmeta" }
+easy-ext = "1.0.2"
+
 
 [dev-dependencies]
 htmeta-auto-test = { path = "../htmeta-auto-test"}
