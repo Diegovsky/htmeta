@@ -29,6 +29,7 @@ pub trait IPlugin: DynClone + Any {
         node: &KdlNode,
         context: PluginContext<&mut HtmlEmitter>,
     ) -> EmitResult;
+    fn clear(&mut self) {}
 }
 
 #[derive(Clone)]

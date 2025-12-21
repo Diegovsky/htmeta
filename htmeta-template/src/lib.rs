@@ -1,9 +1,7 @@
 use std::{borrow::Cow, collections::{HashMap, HashSet}, path::{Path, PathBuf}, rc::Rc};
 
 use htmeta::{
-    EmitResult, HtmlEmitter,
-    kdl::{KdlDocument, KdlEntry, KdlNode},
-    plugins::{EmitStatus, IPlugin, PluginContext},
+    kdl::{KdlDocument, KdlEntry, KdlNode}, plugins::{EmitStatus, IPlugin, PluginContext}, utils::NilWriter, EmitResult, HtmlEmitter
 };
 
 mod utils;
@@ -206,22 +204,14 @@ impl TemplatePlugin {
 
                 let doc = std::fs::read_to_string(&**filename)?;
                 let doc = doc.parse::<KdlDocument>().map_err(|e| e.to_string())?;
-                if command == IMPORT {
-                    // Executes commands from the file, but keeping scope intact.
-                    for node in doc.nodes() {
-                        if let Some(name) = node.command_name() {
-                            // Read commands from the file
-                            self.execute_command_mut(name, node, context)?;
-                        }
-                    }
-                } else {
-                    // Straight up emits the file in-place
-                    let mut em = context.emitter.clone();
+
+                let mut em = context.emitter.clone();
+                if command == INCLUDE {
                     em.emit(&doc, context.writer)?;
-                    // Copies variables into the current context;
-                    let vars = em.vars.into_owned();
-                    context.emitter.vars.extend(vars);
+                } else {
+                    em.emit(&doc, NilWriter::new())?;
                 }
+                *context.emitter = em.into_owned();
             }
             _ => return Err(format!("Unexpected tag: {command}"))?,
         }

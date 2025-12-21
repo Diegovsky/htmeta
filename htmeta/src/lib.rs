@@ -536,9 +536,19 @@ impl<'a> HtmlEmitter<'a> {
         Ok(())
     }
 
-    /// Clears all variables and allows this instance to be reused
+    /// Clears all variables and resets plugins, allowing this instance to be reused.
     pub fn clear(&mut self) {
         self.vars.clear();
+        for plugin in &mut self.plugins {
+            plugin.make_mut().clear()
+        }
+    }
+
+    /// Clones borrowed data from [`KdlNode`], removing lifetime bounds.
+    pub fn into_owned(self) -> HtmlEmitter<'static> {
+        let Self { indent, current_level, vars, filename, plugins } = self;
+        let vars:Vars<'static> = vars.into_owned();
+        HtmlEmitter { indent, current_level, vars, filename, plugins }
     }
 }
 

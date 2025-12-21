@@ -6,8 +6,19 @@
 ///
 /// This can be useful for plugins that need to execute a file but not
 /// emit its contents.
-#[derive(Clone, Copy,Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NilWriter;
+
+impl NilWriter {
+    /// Return a mutable reference to a valid [`NilWriter`].
+    ///
+    /// This function is useful for some bounds.
+    pub fn new<'a>() -> &'a mut NilWriter {
+        // Since `Self` is a ZST, this doesn't really leak memory.
+        let it = Box::new(Self);
+        Box::leak(it)
+    }
+}
 
 impl std::io::Write for NilWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
