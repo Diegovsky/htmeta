@@ -1,9 +1,9 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::{HashMap, HashSet}, path::{Path, PathBuf}, rc::Rc};
 
 use htmeta::{
+    EmitResult, HtmlEmitter,
     kdl::{KdlDocument, KdlEntry, KdlNode},
     plugins::{EmitStatus, IPlugin, PluginContext},
-    EmitResult, HtmlEmitter,
 };
 
 mod utils;
@@ -12,6 +12,7 @@ use utils::*;
 #[derive(Clone, Debug)]
 pub struct Template {
     node: KdlNode,
+    uses_children: bool,
     params: Vec<String>,
 }
 
@@ -30,7 +31,19 @@ cmds! {
     TEMPLATE = "template";
     INCLUDE = "include";
     DBG = "dbg";
+    FOR = "for";
 }
+
+fn find(node: &KdlNode, filter: &impl Fn(&KdlNode) -> bool) -> bool {
+    filter(node) || node.iter_children().any(|n| find(n, filter))
+}
+
+fn for_each_mut(node: &mut KdlNode, map: &impl Fn(&mut KdlNode)) {
+    map(node);
+    node.iter_children_mut()
+        .for_each(|node| for_each_mut(node, map));
+}
+
 
 impl Template {
     fn new(name: &str, node: &KdlNode) -> EmitResult<Self> {
@@ -44,7 +57,8 @@ impl Template {
             None => Default::default(),
         };
         Ok(Template {
-            node: node.clone(),
+            uses_children: find(&node, &|node| node.is_command("children")),
+            node,
             params,
         })
     }
@@ -56,23 +70,35 @@ impl Template {
 #[derive(Debug, Default, Clone)]
 pub struct TemplatePlugin {
     templates: HashMap<String, Template>,
+    file_dep_graph: HashMap<Rc<PathBuf>, HashSet<Rc<PathBuf>>>
 }
 
 impl TemplatePlugin {
+    pub fn used_files(&self) -> impl Iterator<Item = &Path> {
+        self.file_dep_graph.keys().map(|i| i.as_path())
+    }
     fn emit_template(
         &self,
         name: &str,
         node: &KdlNode,
         context: PluginContext<&HtmlEmitter>,
     ) -> EmitResult {
-        if node.children().is_some() {
-            return Err(format!(
-                "{name}: Template instantiations must not have bodies!"
-            ))?;
-        }
         let mut subemitter = context.emitter.clone();
 
         let template = &self.templates[name];
+
+        if node.children().is_some() && !template.uses_children {
+            return Err(format!(
+                "{name}: Template was called with children but does not support it!"
+            ))?;
+        }
+        if find(node, &|node| node.is_command("children")) {
+            return Err(format!(
+                "{name}: Template children contain @children. Infinite recursion detected."
+            ))?;
+
+        }
+        let template_children = node.iter_children().cloned().collect::<Vec<_>>();
 
         // Duplicates the node's args into the emitter for instantiation
         // Also turns arguments into $0, $1, etc.
@@ -102,26 +128,31 @@ impl TemplatePlugin {
 
         subemitter.vars.insert("props", props.into());
 
+        let mut template_node = template.node.clone();
+        // recursively replace @children with the children block.
+        for_each_mut(&mut template_node, &|node| {
+            let Some(children) = node.children_mut().as_mut() else {return};
+            let children = children.nodes_mut();
+            *children = std::mem::take(children).into_iter().flat_map(|c| {
+                if c.is_command("children") {
+                    template_children.clone()
+                } else {
+                    vec![c]
+                }
+            }).collect();
+        });
+
         subemitter.emit(
-            template
-                .node
+            template_node
                 .children()
                 .expect("Internal error: template tags must have children"),
             context.writer,
         )?;
         Ok(())
     }
-    // fn execute_command(
-    //     &self,
-    //     command: &str,
-    //     node: &KdlNode,
-    //     context: &PluginContext,
-    // ) -> EmitResult {
-    //     match command {
-    //         _ => return Err(format!("Unexpected tag: {command}"))?,
-    //     }
-    //     Ok(())
-    // }
+    fn add_path(&mut self, filename: Rc<PathBuf>) -> &mut HashSet<Rc<PathBuf>> {
+        self.file_dep_graph.entry(filename).or_default()
+    }
     fn execute_command_mut(
         &mut self,
         command: &str,
@@ -129,6 +160,9 @@ impl TemplatePlugin {
         context: &mut PluginContext<&mut HtmlEmitter>,
     ) -> EmitResult {
         match command {
+            "children" => {
+                return Err(format!("@children is a reserved name."))?;
+            },
             // registers a template
             TEMPLATE => {
                 let template_name = node.get(0).or_else(|| node.get("name")).ok_or_else(|| {
@@ -144,30 +178,38 @@ impl TemplatePlugin {
             }
             // reads a file and executes commands
             IMPORT | INCLUDE => {
-                let filename = node
+                let include_path = node
                     .get(0)
                     .ok_or_else(|| format!("{command}: Import tags must have path"))?
-                    .to_string();
-                let filename = context
+                    .as_string().ok_or_else(|| format!("Import tags must only receive strings"))?;
+
+                let current_filename: Rc<PathBuf> = context
                     .emitter
                     .filename
-                    .as_ref()
-                    .and_then(|original_filename| original_filename.parent())
-                    .map(|dir| dir.join(&filename))
-                    .unwrap_or_else(|| filename.into());
+                    .clone()
+                    .unwrap_or_default();
+
+                let current_dirname = current_filename.parent().unwrap_or(Path::new("."));
+                let filename = current_dirname.join(context.emitter.vars.expand_string(include_path).as_ref());
                 if !filename.exists() {
                     return Err(format!(
-                        "Failed to find file {}. Original file: {:?}",
+                        "Failed to find file '{}'. Original file: {:?}",
                         filename.display(),
                         context.emitter.filename
                     ))?;
                 }
-                let doc = std::fs::read_to_string(filename)?;
+
+                // Register dependency on `filename`
+                let filename = Rc::new(filename);
+                self.add_path(current_filename).insert(filename.clone());
+                self.add_path(filename.clone());
+
+                let doc = std::fs::read_to_string(&**filename)?;
                 let doc = doc.parse::<KdlDocument>().map_err(|e| e.to_string())?;
                 if command == IMPORT {
                     // Executes commands from the file, but keeping scope intact.
                     for node in doc.nodes() {
-                        if let Some(name) = node.name().value().strip_prefix("@") {
+                        if let Some(name) = node.command_name() {
                             // Read commands from the file
                             self.execute_command_mut(name, node, context)?;
                         }
@@ -193,7 +235,7 @@ impl IPlugin for TemplatePlugin {
         match node.command_name() {
             None => EmitStatus::Skip,
             Some(IMPORT | TEMPLATE | INCLUDE) => EmitStatus::EmitMut,
-            Some(DBG) => EmitStatus::Emit,
+            Some(DBG | FOR) => EmitStatus::Emit,
             Some(template_name) => {
                 if self.templates.contains_key(template_name) {
                     EmitStatus::Emit
@@ -212,6 +254,28 @@ impl IPlugin for TemplatePlugin {
                 context
                     .emitter
                     .emit_tag(&node, "code", context.indent, &mut context.writer)
+            }
+            FOR => {
+                let mut args = node.args().rev().collect::<Vec<_>>();
+                let name = args
+                    .pop()
+                    .ok_or_else(|| err("for: can't iterate without binding name"))?
+                    .as_string()
+                    .ok_or_else(|| err("for: expected binding name to be a String"))?;
+
+                if args.pop().and_then(|i| i.as_string()) != Some("in") {
+                    return Err(err("for: expected `in` keyword after binding name"));
+                }
+                let children = node
+                    .children()
+                    .ok_or_else(|| err("for: expected `for` node to have children"))?;
+
+                for value in args.into_iter().rev() {
+                    let mut emit = context.emitter.clone();
+                    emit.vars.insert(name, emit.vars.expand_value(value));
+                    emit.emit(children, context.writer)?;
+                }
+                Ok(())
             }
             name => self.emit_template(name, node, context),
         }

@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use super::*;
 
 /// Information that plugins can use to change what is being emitted.
@@ -19,7 +21,7 @@ pub enum EmitStatus {
 }
 
 /// A trait that allows you to hook into `htmeta`'s emitter and extend it!
-pub trait IPlugin: DynClone {
+pub trait IPlugin: DynClone + Any {
     fn should_emit(&self, node: &KdlNode, emitter: &HtmlEmitter) -> EmitStatus;
     fn emit_node(&self, node: &KdlNode, context: PluginContext<&HtmlEmitter>) -> EmitResult;
     fn emit_node_mut(
@@ -40,6 +42,12 @@ impl Plugin {
     pub fn make_mut(&mut self) -> &mut dyn IPlugin {
         dyn_clone::rc_make_mut(&mut self.0)
     }
+
+    pub fn get_plugin<T: IPlugin>(&self) -> Option<&T> {
+        let it = &*self.0 as &dyn Any;
+        it.downcast_ref::<T>()
+    }
+
 }
 
 impl std::ops::Deref for Plugin {

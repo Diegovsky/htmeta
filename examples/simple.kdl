@@ -8,6 +8,7 @@ html {
         script src="https://cdn.tailwindcss.com"
         title "title"
     }
+    p "hi there, you!"
     body class="vw-100 vh-100" {
         div class="m-auto w-[200px] h-[100px]" {
             h1 class="text-lg" "Welcome to the website!"

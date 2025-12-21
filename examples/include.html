@@ -1,3 +1,4 @@
+<p>lorem ipsum dolor or something idk</p>
 <!DOCTYPE html>
 <html>
     <head>
@@ -10,9 +11,13 @@
         <div class="m-auto w-[200px] h-[100px]">
             <h1 class="text-lg">Welcome to the website!</h1>
             <div class="inline-flex align-center flex-col">
-                <p class="border-2 rounded-lg border-red my-2">Tired of copy-pasting stuff around?</p>
-                <p class="border-2 rounded-lg border-red my-2">Use templates!</p>
+                <@template name="text">
+                    <p class="border-2 rounded-lg border-red my-2"></p>
+                </@template>
+                <@text content="Tired of copy-pasting stuff around?"></@text>
+                <@text content="Use templates!"></@text>
             </div>
         </div>
     </body>
 </html>
+<p>it: ''</p>

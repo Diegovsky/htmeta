@@ -1,12 +1,16 @@
 use htmeta::{kdl, HtmlEmitter, HtmlEmitterBuilder};
+use htmeta_template::TemplatePlugin;
 use kdl::KdlDocument;
 use lexopt::Parser;
-use miette::{Context, Diagnostic, IntoDiagnostic};
+use miette::{bail, Context, Diagnostic, IntoDiagnostic};
+use notify::Watcher;
 use std::{
     ffi::OsString,
     io::{BufWriter, Read, Write},
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, time::{Duration, Instant},
 };
+
+mod watcher;
 
 #[derive(Debug)]
 struct CliError {
@@ -35,6 +39,7 @@ impl Diagnostic for CliError {
 struct Args {
     builder: HtmlEmitterBuilder,
     input_filename: PathBuf,
+    watch: bool,
     output_filename: Option<PathBuf>,
 }
 
@@ -42,6 +47,7 @@ impl Args {
     fn parse(args: Vec<OsString>) -> Result<Args, lexopt::Error> {
         use lexopt::prelude::*;
 
+        let mut watch = false;
         let mut parser = Parser::from_args(args);
         let mut builder = HtmlEmitter::builder();
         #[cfg(feature = "templates")]
@@ -53,6 +59,7 @@ impl Args {
                 Long("minify") | Short('m') => drop(builder.minify()),
                 Long("tab-size") | Short('t') => drop(builder.indent(parser.value()?.parse()?)),
                 Long("document-formatting") | Short('D') => drop(builder.follow_original_indent()),
+                Long("watch") | Short('w') => {watch = true},
                 Value(value) if input_filename.is_none() => {
                     input_filename = Some(PathBuf::from(value))
                 }
@@ -63,6 +70,7 @@ impl Args {
 
         Ok({
             Args {
+                watch,
                 builder,
                 input_filename: input_filename.ok_or("Missing input filename")?,
                 output_filename,
@@ -81,25 +89,14 @@ fn help(exename: &OsString) -> String {
     )
 }
 
-fn main() -> miette::Result<()> {
-    let mut args: Vec<_> = std::env::args_os().collect();
-    let exename = args.remove(0);
-
-    if args
-        .iter()
-        .map(OsString::as_os_str)
-        .any(|arg| arg == "-h" || arg == "--help")
-    {
-        println!("{}", help(&exename));
-        return Ok(());
-    }
-
+fn compile(args: &Args) -> miette::Result<Vec<PathBuf>> {
     let Args {
         builder,
         input_filename,
         output_filename,
-    } = Args::parse(args).map_err(|cause| CliError { exename, cause })?;
-
+        ..
+    } = args;
+    let output_filename = output_filename.as_ref();
     let mut uses_stdin = false;
     let contents = if input_filename == Path::new("-") {
         uses_stdin = true;
@@ -117,17 +114,72 @@ fn main() -> miette::Result<()> {
     let mut emitter = builder.build(input_filename.clone());
 
     // Dump to stdio
-    let mut file: &mut dyn Write = if uses_stdin || output_filename == Some("-".into()) {
+    let mut file: &mut dyn Write = if uses_stdin || output_filename.map(|o| o == Path::new("-")).unwrap_or(false) {
         &mut std::io::stdout()
     // Write to file
     } else {
         let file = std::fs::File::create(
-            output_filename.unwrap_or_else(|| input_filename.with_extension("html")),
+            output_filename.cloned().unwrap_or_else(|| input_filename.with_extension("html")),
         )
         .into_diagnostic()?;
         &mut BufWriter::new(file)
     };
 
     emitter.emit(&doc, &mut file).into_diagnostic()?;
+    let tmpl = emitter.plugins[0].get_plugin::<TemplatePlugin>().unwrap();
+    Ok(tmpl.used_files().map(ToOwned::to_owned).collect())
+
+}
+
+fn watcher(args: Args) -> miette::Result<()> {
+    if args.input_filename == Path::new("-"){
+        bail!("Can't watch over stdin!");
+    }
+    let mut watcher = watcher::Watcher::new();
+    let do_compile = |watcher: &mut watcher::Watcher|->miette::Result<()> {
+        match compile(&args) {
+            Err(e) => {
+                eprintln!("Compilation failed.\n{e}");
+                Ok(())
+            }
+            Ok(paths) => {
+                watcher.clear();
+                for x in paths {
+                    watcher.add_file(x).unwrap();
+                }
+                Ok(())
+            },
+        }
+    };
+    do_compile(&mut watcher)?;
+    println!("Watching over {}...", args.input_filename.display());
+    loop {
+        watcher.wait_for_change();
+        println!("Change detected, reloading...");
+        do_compile(&mut watcher)?;
+    }
+    // Ok(())
+}
+
+fn main() -> miette::Result<()> {
+    let mut args: Vec<_> = std::env::args_os().collect();
+    let exename = args.remove(0);
+
+    if args
+        .iter()
+        .map(OsString::as_os_str)
+        .any(|arg| arg == "-h" || arg == "--help")
+    {
+        println!("{}", help(&exename));
+        return Ok(());
+    }
+
+    let args = Args::parse(args).map_err(|cause| CliError { exename, cause })?;
+
+    match args.watch {
+        true => { watcher(args)?; },
+        false => { compile(&args)?; },
+    }
+
     Ok(())
 }

@@ -1,0 +1,15 @@
+@template box {
+  div class="p-2" {
+    @children
+  }
+}
+
+body {
+  h1 "Hello!"
+  @box {
+    - "I'm a box!"
+  }
+  @box {
+    - "I'm another box!"
+  }
+}

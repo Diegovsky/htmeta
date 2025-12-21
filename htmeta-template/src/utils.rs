@@ -1,8 +1,17 @@
 use std::borrow::Cow;
 
-use htmeta::kdl::{KdlDocument, KdlNode, KdlValue};
+use htmeta::{
+    kdl::{KdlDocument, KdlNode, KdlValue},
+    Error,
+};
 
 use easy_ext::ext;
+
+pub fn err(msg: impl Into<String>) -> Error {
+    Error::UserError {
+        message: msg.into(),
+    }
+}
 
 #[ext]
 pub impl KdlDocument {
@@ -34,7 +43,10 @@ pub impl KdlNode {
     fn command_name(&self) -> Option<&str> {
         self.name().value().strip_prefix('@')
     }
-    fn args(&self) -> impl Iterator<Item = &KdlValue> {
+    fn is_command(&self, name: &str) -> bool {
+        self.command_name().map(|n| n == name).unwrap_or(false)
+    }
+    fn args(&self) -> impl Iterator<Item = &KdlValue> + DoubleEndedIterator {
         self.entries()
             .iter()
             .filter(|e| e.name().is_none())
@@ -47,7 +59,7 @@ pub impl KdlNode {
     //         .filter_map(|e| Some((e.name()?.value(), e.value())))
     // }
 
-    fn keyed_entries(&self) -> impl Iterator<Item = (Key, &KdlValue)> {
+    fn keyed_entries(&self) -> impl Iterator<Item = (Key, &KdlValue)> + DoubleEndedIterator {
         let mut current_index = 0;
         self.entries().iter().map(move |entry| match entry.name() {
             Some(key) => (Key::Prop(key.value()), entry.value()),

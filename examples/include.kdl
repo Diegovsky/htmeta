@@ -1,0 +1,3 @@
+@include "fragments/lorem.kdl"
+@include "simple.kdl"
+p "it: '$var'"

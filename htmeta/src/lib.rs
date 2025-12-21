@@ -64,13 +64,15 @@ pub type Indent = usize;
 pub type Text<'b> = Cow<'b, str>;
 
 mod error;
+pub mod utils;
 pub mod plugins;
 
 pub use error::Error;
 
 const VOID_TAGS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
-    "track", "wbr", "!DOCTYPE", // not a tag at all, but works a lot like one.
+    "track", "wbr",
+    "!DOCTYPE", "!doctype", // not a tag at all, but works a lot like one.
 ];
 
 /// A builder for [`HtmlEmitter`]s.
@@ -249,7 +251,8 @@ pub struct HtmlEmitter<'a> {
     pub vars: Vars<'a>,
 
     pub filename: Option<Rc<PathBuf>>,
-    plugins: Vec<Plugin>,
+    /// The current list of plugins
+    pub plugins: Vec<Plugin>,
 }
 
 impl<'a> HtmlEmitter<'a> {
@@ -338,31 +341,29 @@ impl<'a> HtmlEmitter<'a> {
         let mut entries = node.entries().to_vec();
 
         let mut contents = None;
-        // If the last one is a string arg, use it as contents.
-        if !is_void && matches!(entries.last(), Some(entry) if entry.name().is_none()) {
+        // If the last entry is a string arg, the node has no children and it isn't a VOID tag, use it as contents.
+        if !is_void
+            && node.children().is_none()
+            && matches!(entries.last(), Some(entry) if entry.name().is_none())
+        {
             let entry = entries.remove(entries.len() - 1);
             contents = Some(entry);
-
-            if node.children().is_some() {
-                return Err(format!(
-                    "[{}] Nodes with inline text and children aren't allowed. {:?}",
-                    node.name().value(),
-                    node.span()
-                ))?;
-            }
         }
 
-        let args = entries
-            .into_iter()
-            .map(|entry| match entry.name() {
-                Some(name) => format!("{name}=\"{}\"", entry.value()),
-                None => format!("\"{}\"", entry.value()),
-            })
-            .map(|arg| self.vars.expand_string(&arg).into_owned())
-            .collect::<Vec<_>>()
-            .join("");
-
-        write!(writer, "{}", args)?;
+        // args
+        for entry in entries {
+            let value = self.vars.expand_value(entry.value());
+            if value.is_empty() {
+                continue;
+            }
+            write!(writer, " ")?;
+            if let Some(name) = entry.name() {
+                let name = self.vars.expand_string(name.value());
+                write!(writer, "{name}=\"{value}\"")?;
+            } else {
+                write!(writer, "{}", value)?;
+            }
+        }
 
         if is_void {
             write!(writer, ">")?;
@@ -465,6 +466,18 @@ impl<'a> HtmlEmitter<'a> {
         Ok(())
     }
 
+    pub fn variable_node<'b: 'a>(&mut self, name: &str, node: &'b KdlNode) -> bool {
+        if name.starts_with("$")
+            && let Some(val) = node.get(0)
+        {
+            let value = self.vars.expand_value(val);
+            self.vars.insert(&name[1..], value);
+            return true
+        }
+        false
+
+    }
+
     /// Emits the corresponding `HTML` into the `writer`. The emitter can be re-used after this.
     ///
     /// # Examples:
@@ -490,13 +503,10 @@ impl<'a> HtmlEmitter<'a> {
             let indent = self.indent(node);
 
             // variable node
-            if name.starts_with("$")
-                && let Some(val) = node.get(0)
-            {
-                let value = self.vars.expand_value(val);
-                self.vars.insert(&name[1..], value);
-                continue;
+            if self.variable_node(name, node) {
+                continue
             }
+
             if name == "_"
                 && let Some(content) = node.get(0)
             {
