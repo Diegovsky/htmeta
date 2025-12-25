@@ -325,7 +325,7 @@ checksum = "fbf6a919d6cf397374f7dfeeea91d974c7c0a7221d0d0f4f20d859d329e53fcc"
 
 [[package]]
 name = "htmeta"
-version = "0.4.0"
+version = "1.0.0"
 dependencies = [
  "criterion",
  "dyn-clone",
@@ -350,7 +350,7 @@ dependencies = [
 
 [[package]]
 name = "htmeta-cli"
-version = "0.4.0"
+version = "1.0.0"
 dependencies = [
  "htmeta",
  "htmeta-template",
@@ -362,7 +362,7 @@ dependencies = [
 
 [[package]]
 name = "htmeta-template"
-version = "0.4.0"
+version = "1.0.0"
 dependencies = [
  "easy-ext",
  "htmeta",

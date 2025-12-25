@@ -1,6 +1,6 @@
 [package]
 name = "htmeta-cli"
-version = "0.4.0"
+version = "1.0.0"
 edition = "2024"
 authors = ["Diego Augusto <diego@diegovsky.me>"]
 description = "A CLI for htmeta, a KDL dialect that compiles into HTML."
