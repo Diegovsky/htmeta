@@ -1,3 +1,4 @@
-@import "fragments/lorem.kdl"
+@include "fragments/lorem.kdl"
 @import "simple.kdl"
-p "it: '$var'"
+p "it: '$$var'"
+@lorem

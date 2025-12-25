@@ -1,0 +1,15 @@
+@template component {
+  h1 "hey there"
+}
+
+@component class="p-2" id="h1"
+
+@template component {
+  div {
+    @children
+  }
+}
+
+@component class="bg-red p-2" {
+  h1 "Hello, world!"
+}

@@ -29,7 +29,6 @@
 /// ```
 ///
 /// [`KDL`]: https://kdl.dev
-///
 
 macro_rules! re {
     ($name:ident, $e:expr) => {
@@ -64,15 +63,14 @@ pub type Indent = usize;
 pub type Text<'b> = Cow<'b, str>;
 
 mod error;
-pub mod utils;
 pub mod plugins;
+pub mod utils;
 
 pub use error::Error;
 
 const VOID_TAGS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
-    "track", "wbr",
-    "!DOCTYPE", "!doctype", // not a tag at all, but works a lot like one.
+    "track", "wbr", "!DOCTYPE", "!doctype", // not a tag at all, but works a lot like one.
 ];
 
 /// A builder for [`HtmlEmitter`]s.
@@ -124,7 +122,7 @@ impl HtmlEmitterBuilder {
         HtmlEmitter {
             current_level: 0,
             indent: self.indent,
-            plugins: self.plugins.clone(),
+            plugins: self.plugins.clone().into(),
             vars: Default::default(),
             filename: filename.into().map(|f| Rc::new(f)),
         }
@@ -145,12 +143,17 @@ impl<'content> Vars<'content> {
     }
     /// Replaces all occurences of variables inside `text` and returns a new string.
     pub fn expand_string<'b>(&self, text: &'b str) -> Text<'b> {
-        re!(VAR, r"\$(\w+)");
+        re!(VAR, r"\$(\$|\w+)");
         VAR.replace_all(text, |captures: &Captures| {
-            self.vars
-                .get(&captures[1])
-                .map(ToString::to_string)
-                .unwrap_or_default()
+            let capture = &captures[1];
+            if capture == "$" {
+                return "$"
+            }
+            let var = self.vars
+                .get(capture)
+                .map(Cow::as_ref)
+                .unwrap_or_default();
+            var
         })
     }
 
@@ -252,7 +255,7 @@ pub struct HtmlEmitter<'a> {
 
     pub filename: Option<Rc<PathBuf>>,
     /// The current list of plugins
-    pub plugins: Vec<Plugin>,
+    pub plugins: im_rc::Vector<Plugin>,
 }
 
 impl<'a> HtmlEmitter<'a> {
@@ -351,7 +354,7 @@ impl<'a> HtmlEmitter<'a> {
         }
 
         // args
-        for entry in entries {
+        for entry in entries {  //
             let value = self.vars.expand_value(entry.value());
             if value.is_empty() {
                 continue;
@@ -393,8 +396,7 @@ impl<'a> HtmlEmitter<'a> {
         indent: &'b str,
         mut writer: Writer<'_>,
     ) -> EmitResult<bool> {
-        let mut needs_mut = None;
-        for (i, plug) in self.plugins.iter().enumerate() {
+        for plug in self.plugins.clone().iter() {
             match plug.should_emit(node, self) {
                 EmitStatus::Skip => continue,
                 EmitStatus::Emit => {
@@ -408,24 +410,7 @@ impl<'a> HtmlEmitter<'a> {
                     )?;
                     return Ok(true);
                 }
-                EmitStatus::EmitMut => {
-                    needs_mut = Some(i);
-                    break;
-                }
             }
-        }
-        if let Some(plug_id) = needs_mut {
-            let mut plug = self.plugins.remove(plug_id);
-            plug.make_mut().emit_node_mut(
-                node,
-                PluginContext {
-                    indent,
-                    emitter: self,
-                    writer: &mut writer,
-                },
-            )?;
-            self.plugins.insert(plug_id, plug);
-            return Ok(true);
         }
         Ok(false)
     }
@@ -472,10 +457,9 @@ impl<'a> HtmlEmitter<'a> {
         {
             let value = self.vars.expand_value(val);
             self.vars.insert(&name[1..], value);
-            return true
+            return true;
         }
         false
-
     }
 
     /// Emits the corresponding `HTML` into the `writer`. The emitter can be re-used after this.
@@ -504,7 +488,7 @@ impl<'a> HtmlEmitter<'a> {
 
             // variable node
             if self.variable_node(name, node) {
-                continue
+                continue;
             }
 
             if name == "_"
@@ -539,16 +523,28 @@ impl<'a> HtmlEmitter<'a> {
     /// Clears all variables and resets plugins, allowing this instance to be reused.
     pub fn clear(&mut self) {
         self.vars.clear();
-        for plugin in &mut self.plugins {
+        for plugin in self.plugins.iter_mut() {
             plugin.make_mut().clear()
         }
     }
 
     /// Clones borrowed data from [`KdlNode`], removing lifetime bounds.
     pub fn into_owned(self) -> HtmlEmitter<'static> {
-        let Self { indent, current_level, vars, filename, plugins } = self;
-        let vars:Vars<'static> = vars.into_owned();
-        HtmlEmitter { indent, current_level, vars, filename, plugins }
+        let Self {
+            indent,
+            current_level,
+            vars,
+            filename,
+            plugins,
+        } = self;
+        let vars: Vars<'static> = vars.into_owned();
+        HtmlEmitter {
+            indent,
+            current_level,
+            vars,
+            filename,
+            plugins,
+        }
     }
 }
 

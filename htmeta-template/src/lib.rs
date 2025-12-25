@@ -1,7 +1,16 @@
-use std::{borrow::Cow, collections::{HashMap, HashSet}, path::{Path, PathBuf}, rc::Rc};
+use std::{
+    borrow::Cow,
+    cell::{RefCell, RefMut},
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use htmeta::{
-    kdl::{KdlDocument, KdlEntry, KdlNode}, plugins::{EmitStatus, IPlugin, PluginContext}, utils::NilWriter, EmitResult, HtmlEmitter
+    EmitResult, HtmlEmitter,
+    kdl::{KdlDocument, KdlEntry, KdlIdentifier, KdlNode, KdlValue},
+    plugins::{EmitStatus, IPlugin, PluginContext},
+    utils::NilWriter,
 };
 
 mod utils;
@@ -11,7 +20,7 @@ use utils::*;
 pub struct Template {
     node: KdlNode,
     uses_children: bool,
-    params: Vec<String>,
+    params: HashMap<String, Option<KdlValue>>,
 }
 
 macro_rules! cmds {
@@ -30,6 +39,7 @@ cmds! {
     INCLUDE = "include";
     DBG = "dbg";
     FOR = "for";
+    CHILDREN = "children";
 }
 
 fn find(node: &KdlNode, filter: &impl Fn(&KdlNode) -> bool) -> bool {
@@ -42,7 +52,6 @@ fn for_each_mut(node: &mut KdlNode, map: &impl Fn(&mut KdlNode)) {
         .for_each(|node| for_each_mut(node, map));
 }
 
-
 impl Template {
     fn new(name: &str, node: &KdlNode) -> EmitResult<Self> {
         let mut node = node.clone();
@@ -51,7 +60,13 @@ impl Template {
         };
 
         let params = match children.remove_child("@params") {
-            Some(node) => node.args().map(|e| e.to_string()).collect(),
+            Some(node) => node.entries().iter().map(|e| {
+                if let Some(name) = e.name() {
+                    (name.value().to_owned(), Some(e.value().clone()))
+                } else {
+                    (e.to_string(), None)
+                }
+            }).collect(),
             None => Default::default(),
         };
         Ok(Template {
@@ -60,162 +75,32 @@ impl Template {
             params,
         })
     }
+    fn default_params(&self) -> impl Iterator<Item = (&str, &KdlValue)> {
+        self.params
+            .iter()
+            .filter_map(|(key, val)| Some((key.as_ref(), val.as_ref()?)))
+
+    }
     fn is_param(&self, key: &str) -> bool {
-        self.params.iter().find(|el| *el == key).is_some()
+        self.params.contains_key(key)
     }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct TemplatePlugin {
-    templates: HashMap<String, Template>,
-    file_dep_graph: HashMap<Rc<PathBuf>, HashSet<Rc<PathBuf>>>
+    templates: RefCell<HashMap<String, Template>>,
+    file_dep_graph: RefCell<HashMap<Rc<PathBuf>, HashSet<Rc<PathBuf>>>>,
 }
 
+mod template_instantiation;
 impl TemplatePlugin {
-    pub fn used_files(&self) -> impl Iterator<Item = &Path> {
-        self.file_dep_graph.keys().map(|i| i.as_path())
+    pub fn used_files(&self) -> Vec<Rc<PathBuf>> {
+        self.file_dep_graph.borrow().keys().cloned().collect()
     }
-    fn emit_template(
-        &self,
-        name: &str,
-        node: &KdlNode,
-        context: PluginContext<&HtmlEmitter>,
-    ) -> EmitResult {
-        let mut subemitter = context.emitter.clone();
-
-        let template = &self.templates[name];
-
-        if node.children().is_some() && !template.uses_children {
-            return Err(format!(
-                "{name}: Template was called with children but does not support it!"
-            ))?;
-        }
-        if find(node, &|node| node.is_command("children")) {
-            return Err(format!(
-                "{name}: Template children contain @children. Infinite recursion detected."
-            ))?;
-
-        }
-        let template_children = node.iter_children().cloned().collect::<Vec<_>>();
-
-        // Duplicates the node's args into the emitter for instantiation
-        // Also turns arguments into $0, $1, etc.
-        subemitter
-            .vars
-            .extend(node.keyed_entries().map(|(key, value)| {
-                (
-                    Cow::<str>::from(key),
-                    context.emitter.vars.expand_value(value),
-                )
-            }));
-
-        // Creates special variable `props` which contains all unused properties.
-        let props = node
-            .entries()
-            .iter()
-            .filter_map(|e| {
-                let name = e.name()?;
-                if template.is_param(name.value()) {
-                    None
-                } else {
-                    Some(e.to_string())
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        subemitter.vars.insert("props", props.into());
-
-        let mut template_node = template.node.clone();
-        // recursively replace @children with the children block.
-        for_each_mut(&mut template_node, &|node| {
-            let Some(children) = node.children_mut().as_mut() else {return};
-            let children = children.nodes_mut();
-            *children = std::mem::take(children).into_iter().flat_map(|c| {
-                if c.is_command("children") {
-                    template_children.clone()
-                } else {
-                    vec![c]
-                }
-            }).collect();
-        });
-
-        subemitter.emit(
-            template_node
-                .children()
-                .expect("Internal error: template tags must have children"),
-            context.writer,
-        )?;
-        Ok(())
-    }
-    fn add_path(&mut self, filename: Rc<PathBuf>) -> &mut HashSet<Rc<PathBuf>> {
-        self.file_dep_graph.entry(filename).or_default()
-    }
-    fn execute_command_mut(
-        &mut self,
-        command: &str,
-        node: &KdlNode,
-        context: &mut PluginContext<&mut HtmlEmitter>,
-    ) -> EmitResult {
-        match command {
-            "children" => {
-                return Err(format!("@children is a reserved name."))?;
-            },
-            // registers a template
-            TEMPLATE => {
-                let template_name = node.get(0).or_else(|| node.get("name")).ok_or_else(|| {
-                    format!("{command}: Template tags must have a `name` parameter!")
-                })?;
-                let template_name = context
-                    .emitter
-                    .vars
-                    .expand_value(template_name)
-                    .into_owned();
-                let template = Template::new(&template_name, node);
-                self.templates.insert(template_name, template?);
-            }
-            // reads a file and executes commands
-            IMPORT | INCLUDE => {
-                let include_path = node
-                    .get(0)
-                    .ok_or_else(|| format!("{command}: Import tags must have path"))?
-                    .as_string().ok_or_else(|| format!("Import tags must only receive strings"))?;
-
-                let current_filename: Rc<PathBuf> = context
-                    .emitter
-                    .filename
-                    .clone()
-                    .unwrap_or_default();
-
-                let current_dirname = current_filename.parent().unwrap_or(Path::new("."));
-                let filename = current_dirname.join(context.emitter.vars.expand_string(include_path).as_ref());
-                if !filename.exists() {
-                    return Err(format!(
-                        "Failed to find file '{}'. Original file: {:?}",
-                        filename.display(),
-                        context.emitter.filename
-                    ))?;
-                }
-
-                // Register dependency on `filename`
-                let filename = Rc::new(filename);
-                self.add_path(current_filename).insert(filename.clone());
-                self.add_path(filename.clone());
-
-                let doc = std::fs::read_to_string(&**filename)?;
-                let doc = doc.parse::<KdlDocument>().map_err(|e| e.to_string())?;
-
-                let mut em = context.emitter.clone();
-                if command == INCLUDE {
-                    em.emit(&doc, context.writer)?;
-                } else {
-                    em.emit(&doc, NilWriter::new())?;
-                }
-                *context.emitter = em.into_owned();
-            }
-            _ => return Err(format!("Unexpected tag: {command}"))?,
-        }
-        Ok(())
+   fn add_path(&self, filename: Rc<PathBuf>) -> RefMut<HashSet<Rc<PathBuf>>> {
+        RefMut::map(self.file_dep_graph.borrow_mut(), |it| {
+            it.entry(filename).or_default()
+        })
     }
 }
 
@@ -224,10 +109,9 @@ impl IPlugin for TemplatePlugin {
         let _ = emitter;
         match node.command_name() {
             None => EmitStatus::Skip,
-            Some(IMPORT | TEMPLATE | INCLUDE) => EmitStatus::EmitMut,
-            Some(DBG | FOR) => EmitStatus::Emit,
+            Some(IMPORT | TEMPLATE | INCLUDE | DBG | FOR) => EmitStatus::Emit,
             Some(template_name) => {
-                if self.templates.contains_key(template_name) {
+                if self.templates.borrow().contains_key(template_name) {
                     EmitStatus::Emit
                 } else {
                     EmitStatus::Skip
@@ -235,15 +119,16 @@ impl IPlugin for TemplatePlugin {
             }
         }
     }
-    fn emit_node(&self, node: &KdlNode, mut context: PluginContext<&HtmlEmitter>) -> EmitResult {
-        match node.command_name().unwrap() {
+    fn emit_node(&self, node: &KdlNode, mut context: PluginContext) -> EmitResult {
+        let command = node.command_name().unwrap();
+        match command {
             DBG => {
-                let mut node = KdlNode::new("code");
-                node.entries_mut()
-                    .push(KdlEntry::new(format!("{:#?}", context.emitter.vars)));
+                let code = format!("<code>{:#?}</code>", context.emitter.vars);
+                let mut pre = KdlNode::new("pre");
+                pre.entries_mut().push(KdlEntry::new(code));
                 context
                     .emitter
-                    .emit_tag(&node, "code", context.indent, &mut context.writer)
+                    .emit_tag(&pre, "pre", context.indent, &mut context.writer)?;
             }
             FOR => {
                 let mut args = node.args().rev().collect::<Vec<_>>();
@@ -265,23 +150,65 @@ impl IPlugin for TemplatePlugin {
                     emit.vars.insert(name, emit.vars.expand_value(value));
                     emit.emit(children, context.writer)?;
                 }
-                Ok(())
             }
-            name => self.emit_template(name, node, context),
+
+            "children" => {
+                return Err(format!("@children is a reserved name."))?;
+            }
+            // registers a template
+            TEMPLATE => {
+                let template_name = node.get(0).or_else(|| node.get("name")).ok_or_else(|| {
+                    format!("{command}: Template tags must have a `name` parameter!")
+                })?;
+                let template_name = context
+                    .emitter
+                    .vars
+                    .expand_value(template_name)
+                    .into_owned();
+                let template = Template::new(&template_name, node);
+                self.templates.borrow_mut().insert(template_name, template?);
+            }
+            // reads a file and executes commands
+            IMPORT | INCLUDE => {
+                let include_path = node
+                    .get(0)
+                    .ok_or_else(|| format!("{command}: Import tags must have path"))?
+                    .as_string()
+                    .ok_or_else(|| format!("Import tags must only receive strings"))?;
+
+                let current_filename: Rc<PathBuf> =
+                    context.emitter.filename.clone().unwrap_or_default();
+
+                let current_dirname = current_filename.parent().unwrap_or(Path::new("."));
+                let filename =
+                    current_dirname.join(context.emitter.vars.expand_string(include_path).as_ref());
+                if !filename.exists() {
+                    return Err(format!(
+                        "Failed to find file '{}'. Original file: {:?}",
+                        filename.display(),
+                        context.emitter.filename
+                    ))?;
+                }
+
+                // Register dependency on `filename`
+                let filename = Rc::new(filename);
+                self.add_path(current_filename).insert(filename.clone());
+                self.add_path(filename.clone());
+
+                let doc = std::fs::read_to_string(&**filename)?;
+                let doc = doc.parse::<KdlDocument>().map_err(|e| e.to_string())?;
+
+                let mut em = context.emitter.clone();
+                // let mut em = context.emitter.clone();
+                if command == INCLUDE {
+                    em.emit(&doc, context.writer)?;
+                } else {
+                    em.emit(&doc, NilWriter::new())?;
+                }
+                *context.emitter = em.into_owned();
+            }
+            name => self.emit_template(name, node, context)?,
         }
-    }
-    fn emit_node_mut(
-        &mut self,
-        node: &KdlNode,
-        mut context: PluginContext<&mut HtmlEmitter>,
-    ) -> EmitResult {
-        let Some(name) = node.command_name() else {
-            return Err(format!(
-                "Unexpected tag in `emit_node_mut`: {}",
-                node.name().value()
-            ))?;
-        };
-        self.execute_command_mut(name, node, &mut context)?;
         Ok(())
     }
 }

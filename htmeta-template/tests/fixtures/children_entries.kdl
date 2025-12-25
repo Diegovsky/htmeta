@@ -1,0 +1,20 @@
+@template bad-container {
+  @params example
+  div class="not list" {
+    @children class="mb-2" example=$example
+  }
+}
+
+@bad-container {
+  p "item 1"
+  p "item 1"
+  p "item 1"
+  p "item 1"
+}
+
+@bad-container example="??"{
+  p "👍"
+  p "👍"
+  p "👍"
+  p "👎"
+}

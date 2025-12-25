@@ -5,9 +5,7 @@ use lexopt::Parser;
 use miette::{bail, Context, Diagnostic, IntoDiagnostic};
 use notify::Watcher;
 use std::{
-    ffi::OsString,
-    io::{BufWriter, Read, Write},
-    path::{Path, PathBuf}, time::{Duration, Instant},
+    ffi::OsString, io::{BufWriter, Read, Write}, path::{Path, PathBuf}, rc::Rc, time::{Duration, Instant}
 };
 
 mod watcher;
@@ -89,7 +87,7 @@ fn help(exename: &OsString) -> String {
     )
 }
 
-fn compile(args: &Args) -> miette::Result<Vec<PathBuf>> {
+fn compile(args: &Args) -> miette::Result<Vec<Rc<PathBuf>>> {
     let Args {
         builder,
         input_filename,
@@ -127,7 +125,7 @@ fn compile(args: &Args) -> miette::Result<Vec<PathBuf>> {
 
     emitter.emit(&doc, &mut file).into_diagnostic()?;
     let tmpl = emitter.plugins[0].get_plugin::<TemplatePlugin>().unwrap();
-    Ok(tmpl.used_files().map(ToOwned::to_owned).collect())
+    Ok(tmpl.used_files())
 
 }
 
@@ -144,9 +142,11 @@ fn watcher(args: Args) -> miette::Result<()> {
             }
             Ok(paths) => {
                 watcher.clear();
-                for x in paths {
-                    watcher.add_file(x).unwrap();
+                for x in &paths {
+                    watcher.add_file(PathBuf::clone(&*x)).unwrap();
                 }
+                // ensure current file is always watched
+                watcher.add_file(args.input_filename.clone()).unwrap();
                 Ok(())
             },
         }

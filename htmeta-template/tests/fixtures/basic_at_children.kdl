@@ -1,0 +1,18 @@
+@template pastel {
+  div class="bg-amber-300 p-4" {
+    h2 "Section"
+    @children
+  }
+}
+
+@pastel {
+  p "This is a child"
+  p "This is also a child"
+  p "This is not a child >:("
+}
+
+@pastel {
+  span "inline child :+1:"
+  span "inline child: 👍"
+  span "inline child: 😳"
+}

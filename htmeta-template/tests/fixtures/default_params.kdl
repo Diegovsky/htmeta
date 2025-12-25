@@ -1,0 +1,8 @@
+@template comp {
+  @params label=Title
+  label $label
+  input type=text
+}
+
+@comp
+@comp label="Honduras"

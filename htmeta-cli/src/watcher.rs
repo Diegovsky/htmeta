@@ -33,7 +33,6 @@ impl Watcher {
         }
     }
     pub fn add_file(&mut self, file_path: PathBuf) -> std::io::Result<()> {
-        let file_path = file_path;
         let parent = file_path.parent().unwrap_or(Path::new("."));
         self.notifier
             .watch(parent, notify::RecursiveMode::NonRecursive)
