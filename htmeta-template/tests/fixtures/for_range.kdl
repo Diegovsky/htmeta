@@ -1,0 +1,22 @@
+
+@for x in 1 2 3 4 5 {
+  p "manual for $x"
+}
+
+br
+
+@for x in @range 5 {
+  p "automatic $x"
+}
+
+br
+
+@for x in @range 1 5 {
+  p "automatic for with begin and end $x"
+}
+
+br
+
+@for x in @range 1 2 5 {
+  p "automatic for with begin, step and end $x"
+}

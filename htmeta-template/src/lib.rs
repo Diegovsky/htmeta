@@ -13,8 +13,11 @@ use htmeta::{
     utils::NilWriter,
 };
 
+mod expr;
 mod utils;
 use utils::*;
+
+use crate::expr::parse_range;
 
 #[derive(Clone, Debug)]
 pub struct Template {
@@ -60,13 +63,17 @@ impl Template {
         };
 
         let params = match children.remove_child("@params") {
-            Some(node) => node.entries().iter().map(|e| {
-                if let Some(name) = e.name() {
-                    (name.value().to_owned(), Some(e.value().clone()))
-                } else {
-                    (e.to_string(), None)
-                }
-            }).collect(),
+            Some(node) => node
+                .entries()
+                .iter()
+                .map(|e| {
+                    if let Some(name) = e.name() {
+                        (name.value().to_owned(), Some(e.value().clone()))
+                    } else {
+                        (e.to_string(), None)
+                    }
+                })
+                .collect(),
             None => Default::default(),
         };
         Ok(Template {
@@ -79,7 +86,6 @@ impl Template {
         self.params
             .iter()
             .filter_map(|(key, val)| Some((key.as_ref(), val.as_ref()?)))
-
     }
     fn is_param(&self, key: &str) -> bool {
         self.params.contains_key(key)
@@ -97,7 +103,7 @@ impl TemplatePlugin {
     pub fn used_files(&self) -> Vec<Rc<PathBuf>> {
         self.file_dep_graph.borrow().keys().cloned().collect()
     }
-   fn add_path(&self, filename: Rc<PathBuf>) -> RefMut<HashSet<Rc<PathBuf>>> {
+    fn add_path(&self, filename: Rc<PathBuf>) -> RefMut<HashSet<Rc<PathBuf>>> {
         RefMut::map(self.file_dep_graph.borrow_mut(), |it| {
             it.entry(filename).or_default()
         })
@@ -145,9 +151,17 @@ impl IPlugin for TemplatePlugin {
                     .children()
                     .ok_or_else(|| err("for: expected `for` node to have children"))?;
 
-                for value in args.into_iter().rev() {
+                args.reverse();
+
+                let iter: Box<dyn Iterator<Item = _>> = if let Some(iter) = parse_range(&*args) {
+                    Box::new(iter.map(|i| KdlValue::Integer(i as _)).map(Cow::Owned))
+                } else {
+                    Box::new(args.into_iter().map(Cow::Borrowed))
+                };
+
+                for value in iter {
                     let mut emit = context.emitter.clone();
-                    emit.vars.insert(name, emit.vars.expand_value(value));
+                    emit.vars.insert(name, emit.vars.expand_value(&*value));
                     emit.emit(children, context.writer)?;
                 }
             }
