@@ -1,4 +1,6 @@
 @include "fragments/lorem.kdl"
 @import "simple.kdl"
-p "it: '$$var'"
+p "it: $$eto"
+$eto 10
+p "match ${eto + 1}"
 @lorem

@@ -161,7 +161,7 @@ impl IPlugin for TemplatePlugin {
 
                 for value in iter {
                     let mut emit = context.emitter.clone();
-                    emit.vars.insert(name, emit.vars.expand_value(&*value));
+                    emit.vars.insert(name, emit.vars.expand_value_str(&*value)?);
                     emit.emit(children, context.writer)?;
                 }
             }
@@ -177,7 +177,7 @@ impl IPlugin for TemplatePlugin {
                 let template_name = context
                     .emitter
                     .vars
-                    .expand_value(template_name)
+                    .expand_value_str(template_name)?
                     .into_owned();
                 let template = Template::new(&template_name, node);
                 self.templates.borrow_mut().insert(template_name, template?);
@@ -195,7 +195,7 @@ impl IPlugin for TemplatePlugin {
 
                 let current_dirname = current_filename.parent().unwrap_or(Path::new("."));
                 let filename =
-                    current_dirname.join(context.emitter.vars.expand_string(include_path).as_ref());
+                    current_dirname.join(context.emitter.vars.expand_string(include_path)?.as_ref());
                 if !filename.exists() {
                     return Err(format!(
                         "Failed to find file '{}'. Original file: {:?}",

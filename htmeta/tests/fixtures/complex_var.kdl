@@ -1,0 +1,2 @@
+$x 1
+p "Resultado: ${x + 9}"

@@ -1,0 +1,2 @@
+$kebab-case "var"
+p "${kebab-case}"

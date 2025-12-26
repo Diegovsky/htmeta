@@ -1,10 +1,9 @@
-#![feature(let_chains)]
 /// ![GitHub Release](https://img.shields.io/github/v/release/Diegovsky/htmeta)
 /// ![GitHub Repo stars](https://img.shields.io/github/stars/Diegovsky/htmeta)
 /// ![GitHub Forks](https://img.shields.io/github/forks/Diegovsky/htmeta)
 /// ![GitHub Contributors](https://img.shields.io/github/contributors/Diegovsky/htmeta)
 ///
-/// This crate allows you to transform/transpile/compile a [`KDL`] document into `HTML`.
+/// This crate allows you to compile a [`KDL`] document into `HTML`.
 /// Since the `kdl` dependency is unavoidable, it is re-exported for convenience as [`kdl`].
 ///
 /// # Basic Example
@@ -29,15 +28,16 @@
 /// ```
 ///
 /// [`KDL`]: https://kdl.dev
+use regex::Regex;
+use std::sync::LazyLock;
 
 macro_rules! re {
     ($name:ident, $e:expr) => {
-        use regex::Regex;
-        use std::sync::LazyLock;
         static $name: LazyLock<Regex> = LazyLock::new(|| Regex::new($e).unwrap());
     };
 }
 
+use rhai::{Dynamic, Scope};
 use std::{borrow::Cow, collections::HashMap, io::Write, path::PathBuf, rc::Rc};
 
 use dyn_clone::DynClone;
@@ -63,10 +63,13 @@ pub type Indent = usize;
 pub type Text<'b> = Cow<'b, str>;
 
 mod error;
+mod expr;
 pub mod plugins;
 pub mod utils;
 
 pub use error::Error;
+
+use crate::{error::ScriptingError, expr::Value};
 
 const VOID_TAGS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
@@ -129,7 +132,7 @@ impl HtmlEmitterBuilder {
     }
 }
 
-type VarMap<'content> = HashMap<Box<str>, Text<'content>>;
+type VarMap<'content> = HashMap<Box<str>, Value<'content>>;
 
 /// Holds all node's variables
 #[derive(Clone, Debug, Default)]
@@ -141,29 +144,73 @@ impl<'content> Vars<'content> {
     pub fn new(map: VarMap<'content>) -> Self {
         Self { vars: map.into() }
     }
+    pub fn eval_expr<'b>(&self, text: &'b str) -> Result<Dynamic, ScriptingError> {
+        let engine = rhai::Engine::new();
+
+        let mut scope = self
+            .vars
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_owned().into()))
+            .collect::<Scope>();
+
+
+        match engine.eval_with_scope::<Dynamic>(&mut scope, text) {
+            Ok(val) => Ok(val),
+            Err(e) => {
+                Err(ScriptingError {
+                    message:e.to_string(),
+                    source: text.to_owned(),
+                })
+            }
+        }
+
+
+    }
     /// Replaces all occurences of variables inside `text` and returns a new string.
-    pub fn expand_string<'b>(&self, text: &'b str) -> Text<'b> {
-        re!(VAR, r"\$(\$|\w+)");
-        VAR.replace_all(text, |captures: &Captures| {
+    pub fn expand_string<'b>(&self, text: &'b str) -> EmitResult<Text<'b>> {
+        re!(SIMPLE_VAR, r"(?x)   \$(\$ | \w+ | \{ ([^}]+) \})");
+
+        let mut err: Vec<ScriptingError> = vec![];
+        let text = SIMPLE_VAR.replace_all(text, |captures: &Captures| {
             let capture = &captures[1];
             if capture == "$" {
-                return "$"
+                return Cow::Borrowed("$");
             }
-            let var = self.vars
-                .get(capture)
-                .map(Cow::as_ref)
-                .unwrap_or_default();
+            if let Some(complex) = captures.get(2) {
+
+                let complex = complex.as_str();
+                let val = match self.eval_expr(complex) {
+                    Ok(val) => val,
+                    Err(e) => {
+                        err.push(e);
+                        return Cow::Borrowed("<error>");
+                    }
+                };
+                return Cow::Owned(val.to_string());
+            }
+            let var = self.vars.get(capture).map(Value::as_str).unwrap_or_default();
             var
-        })
+        });
+
+        if !err.is_empty() {
+            return Err(Error::ScriptingError { 0: err });
+        }
+
+        Ok(text)
     }
 
     /// Converts the `value`'s [`String`] representation and replaces any variables found within.
     /// This is a convenient wrapper around [`Self::expand_string`].
-    pub fn expand_value<'b>(&self, value: &'b KdlValue) -> Text<'b> {
-        match value {
-            KdlValue::String(content) => self.expand_string(content),
-            rest => rest.to_string().into(),
-        }
+    pub fn expand_value_str<'b>(&self, value: &'b KdlValue) -> EmitResult<Text<'b>> {
+        self.expand_value(value).map(|i| i.as_str())
+    }
+
+    pub fn expand_value<'b>(&self, value: &'b KdlValue) -> EmitResult<Value<'b>> {
+        let val: Value<'b> = Value::from(value);
+        Ok(match val {
+            Value::String(content) => Value::String(self.expand_string(&*content)?.into_owned().into()),
+            val => val,
+        })
     }
 
     fn make_mut(&mut self) -> &mut VarMap<'content> {
@@ -171,13 +218,13 @@ impl<'content> Vars<'content> {
     }
 
     /// Inserts a new variable into the node.
-    pub fn insert(&mut self, key: &str, value: Text<'content>) {
-        self.make_mut().insert(key.into(), value);
+    pub fn insert(&mut self, key: &str, value: impl Into<Value<'content>>) {
+        self.make_mut().insert(key.into(), value.into());
     }
 
-    /// Returns a reference to a variable's value.
-    pub fn get(&self, key: &str) -> Option<&Text<'content>> {
-        self.vars.get(key)
+    /// Returns a variable's string representation.
+    pub fn get_str(&self, key: &str) -> Option<Text<'content>> {
+        self.vars.get(key).map(Value::as_str)
     }
 
     /// Clears the node, removing all registered variables.
@@ -186,7 +233,7 @@ impl<'content> Vars<'content> {
     }
 
     /// Returns an iterator of Key-Value pairs.
-    pub fn iter(&self) -> impl Iterator<Item = (&Box<str>, &Text<'content>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Box<str>, &Value<'content>)> {
         self.vars.iter()
     }
 
@@ -205,19 +252,20 @@ impl<'content> Vars<'content> {
     }
 }
 
-impl<'a, S> std::iter::Extend<(S, Text<'a>)> for Vars<'a>
+impl<'a, S, V> std::iter::Extend<(S, V)> for Vars<'a>
 where
     S: Into<Box<str>>,
+    V: Into<Value<'a>>
 {
-    fn extend<T: IntoIterator<Item = (S, Text<'a>)>>(&mut self, iter: T) {
+    fn extend<T: IntoIterator<Item = (S, V)>>(&mut self, iter: T) {
         self.make_mut()
-            .extend(iter.into_iter().map(|(k, v)| (k.into(), v)))
+            .extend(iter.into_iter().map(|(k, v)| (k.into(), v.into())))
     }
 }
 
 impl<'a> std::iter::IntoIterator for Vars<'a> {
-    type Item = (Box<str>, Text<'a>);
-    type IntoIter = std::collections::hash_map::IntoIter<Box<str>, Text<'a>>;
+    type Item = (Box<str>, Value<'a>);
+    type IntoIter = std::collections::hash_map::IntoIter<Box<str>, Value<'a>>;
     fn into_iter(self) -> Self::IntoIter {
         self.unwrap().into_iter()
     }
@@ -354,14 +402,15 @@ impl<'a> HtmlEmitter<'a> {
         }
 
         // args
-        for entry in entries {  //
-            let value = self.vars.expand_value(entry.value());
+        for entry in entries {
+            //
+            let value = self.vars.expand_value_str(entry.value())?;
             if value.is_empty() {
                 continue;
             }
             write!(writer, " ")?;
             if let Some(name) = entry.name() {
-                let name = self.vars.expand_string(name.value());
+                let name = self.vars.expand_string(name.value())?;
                 write!(writer, "{name}=\"{value}\"")?;
             } else {
                 write!(writer, "{}", value)?;
@@ -375,7 +424,7 @@ impl<'a> HtmlEmitter<'a> {
             write!(writer, ">")?;
             if let Some(contents) = contents {
                 // If node has children and text, print each in their own line
-                write!(writer, "{}", self.vars.expand_value(contents.value()))?;
+                write!(writer, "{}", self.vars.expand_value_str(contents.value())?)?;
             }
             // Children
             else if let Some(doc) = node.children() {
@@ -435,7 +484,7 @@ impl<'a> HtmlEmitter<'a> {
             writer,
             "{}{}",
             indent,
-            html_escape::encode_text(&self.vars.expand_value(content))
+            html_escape::encode_text(&self.vars.expand_value_str(content)?)
         )?;
         self.write_line(writer)?;
         Ok(())
@@ -446,20 +495,20 @@ impl<'a> HtmlEmitter<'a> {
     ///
     /// Note that $variables are still expanded.
     pub fn emit_raw_text(&self, indent: &str, content: &KdlValue, writer: Writer) -> EmitResult {
-        write!(writer, "{}{}", indent, &self.vars.expand_value(content))?;
+        write!(writer, "{}{}", indent, &self.vars.expand_value_str(content)?)?;
         self.write_line(writer)?;
         Ok(())
     }
 
-    pub fn variable_node<'b: 'a>(&mut self, name: &str, node: &'b KdlNode) -> bool {
+    pub fn variable_node<'b: 'a>(&mut self, name: &str, node: &'b KdlNode) -> EmitResult<bool> {
         if name.starts_with("$")
             && let Some(val) = node.get(0)
         {
-            let value = self.vars.expand_value(val);
+            let value = self.vars.expand_value(val)?;
             self.vars.insert(&name[1..], value);
-            return true;
+            return Ok(true);
         }
-        false
+        Ok(false)
     }
 
     /// Emits the corresponding `HTML` into the `writer`. The emitter can be re-used after this.
@@ -487,7 +536,7 @@ impl<'a> HtmlEmitter<'a> {
             let indent = self.indent(node);
 
             // variable node
-            if self.variable_node(name, node) {
+            if self.variable_node(name, node)? {
                 continue;
             }
 

@@ -22,6 +22,8 @@ kdl = {workspace = true}
 dyn-clone = "1.0.17"
 serde = { version = "1.0.215", features = ["derive"] }
 im-rc = "15.1.0"
+easy-ext = "1.0.2"
+rhai = "1.23.6"
 
 [dev-dependencies]
 similar = "2.6.0"

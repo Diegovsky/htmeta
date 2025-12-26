@@ -35,37 +35,42 @@ fn instantiate_children(children_node: KdlNode, children: &Vec<KdlNode>) -> Vec<
     children
 }
 
-fn set_variables<'a>(
-    template: &Template,
+fn set_variables<'a, 'b>(
+    template: &'b Template,
     template_node: &mut KdlNode,
     context: &PluginContext,
     subemitter: &mut HtmlEmitter<'a>,
     instantiation_information: &'a KdlNode,
-) {
+) -> EmitResult {
+    let default_params = template
+        .default_params()
+        .map(|(key, val)| {
+            Ok((
+                key.to_owned(),
+                context.emitter.vars.expand_value(val)?.as_owned(),
+            ))
+    }).collect::<EmitResult<Vec<_>>>()?;
     subemitter
         .vars
-        .extend(template.default_params().map(|(key, val)| {
-            (
-                key.to_owned(),
-                context.emitter.vars.expand_value(val).into_owned().into(),
-            )
-        }));
+        .extend(default_params);
 
     // Turns named entries into variables with the corresponding name
     // (E.g: `arg="value"` => `$arg "value"`)
     //
     // And positional arguments into numbered variables
     // (E.g: `"foo" entry="zoo" "bar"` => `$0 "foo"; $entry "zoo"; $1 "bar"`)
-    subemitter.vars.extend(
+    let args =
         instantiation_information
             .keyed_entries()
             .map(|(key, value)| {
-                (
+                Ok((
                     Cow::<str>::from(key),
                     // value.clone()
-                    context.emitter.vars.expand_value(value),
-                )
-            }),
+                    context.emitter.vars.expand_value_str(value)?,
+                ))
+            }).collect::<EmitResult<Vec<_>>>()?;
+    subemitter.vars.extend(
+        args
     );
 
     // Creates special variable `props` which contains all unused properties.
@@ -83,7 +88,7 @@ fn set_variables<'a>(
         .collect::<Vec<_>>()
         .join(" ");
 
-    subemitter.vars.insert("props", props.clone().into());
+    subemitter.vars.insert("props", props.clone());
 
     let template = template_node.ensure_children();
 
@@ -99,6 +104,7 @@ fn set_variables<'a>(
             entries.push(props.into());
         }
     }
+    Ok(())
 }
 
 impl TemplatePlugin {

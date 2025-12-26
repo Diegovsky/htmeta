@@ -1,6 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScriptingError {
+    pub(crate) message: String,
+    pub(crate) source: String,
+}
+
 /// The crate's error type.
 ///
 /// It is currently very primitive, and implements [`From`] for both
@@ -19,6 +25,8 @@ pub enum Error {
     Io(std::io::Error),
     /// User Error with a friendly message to inform what went wrong.
     UserError { message: String },
+    /// User-Facing error that happened during script execution.
+    ScriptingError(Vec<ScriptingError>)
 }
 
 use Error::*;
@@ -37,6 +45,13 @@ impl std::fmt::Display for Error {
         match self {
             Io(io) => Display::fmt(io, f),
             UserError { message } => write!(f, "{}", message),
+            ScriptingError (messages) => {
+                write!(f, "Many errors:\n")?;
+                for msg in messages {
+                    writeln!(f, "{} in [{}]", msg.message, msg.source)?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -45,7 +60,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Io(io) => Some(io),
-            UserError { .. } => None,
+            UserError { .. } | &ScriptingError (_) => None,
         }
     }
 }

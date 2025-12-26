@@ -1,4 +1,4 @@
 @template lorem {
   p "lorem ipsum dolor or something idk"
 }
-$var "variable"
+$eto "variable"
