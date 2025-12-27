@@ -1,12 +1,19 @@
-use rhai::{Array, Dynamic, Engine, Module, Scope, AST, INT};
+use rhai::{Engine, Module, Scope, INT};
 
-fn lorem(count: INT) -> Array {
+fn lorem(count: INT) -> String {
+    let count = count.abs() as usize;
+    let mut nexti = 80;
     include_str!("lorem.txt")
         .split_whitespace()
         .cycle()
-        .take(count.abs() as usize)
-        .map(Dynamic::from)
-        .collect()
+        .enumerate()
+        .take(count)
+        .flat_map(|(i, w)| if w.ends_with(".") && (i >= nexti || i == count-1 ){
+            nexti += 40;
+            vec![w, "\n<br>\n"]
+        } else if dbg!(i) == count-1 {vec!["endus."]} else {vec![w]})
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn make_engine() -> Engine {
