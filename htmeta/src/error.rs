@@ -31,6 +31,12 @@ pub enum Error {
 
 use Error::*;
 
+impl From<ScriptingError> for Error {
+    fn from(value: ScriptingError) -> Self {
+        Self::ScriptingError(vec![value])
+    }
+}
+
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -48,7 +54,7 @@ impl std::fmt::Display for Error {
             ScriptingError (messages) => {
                 write!(f, "Many errors:\n")?;
                 for msg in messages {
-                    writeln!(f, "{} in [{}]", msg.message, msg.source)?;
+                    writeln!(f, "`{}` in [{}]", msg.message, msg.source)?;
                 }
                 Ok(())
             }

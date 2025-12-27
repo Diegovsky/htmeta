@@ -1,0 +1,19 @@
+use rhai::{Array, Dynamic, Engine, Module, Scope, AST, INT};
+
+fn lorem(count: INT) -> Array {
+    include_str!("lorem.txt")
+        .split_whitespace()
+        .cycle()
+        .take(count.abs() as usize)
+        .map(Dynamic::from)
+        .collect()
+}
+
+pub fn make_engine() -> Engine {
+    let mut engine = Engine::new();
+    let mod_src =include_str!("builtins.rhai"); 
+    let module = Module::eval_ast_as_new(&mut Scope::new(), engine.compile(mod_src), &engine).unwrap();
+    engine.register_static_module("htmeta", module);
+    engine.register_fn("lorem", lorem);
+    engine
+}

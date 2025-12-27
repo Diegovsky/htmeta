@@ -1,32 +1,13 @@
-use htmeta::kdl::KdlValue;
+use htmeta::{kdl::KdlValue, ScriptingError, Value, Vars};
+use rhai::{Array, Dynamic};
 
-pub(crate) fn parse_range(args: &[&KdlValue]) -> Option<impl Iterator<Item=i64>> {
-    let maybe_command = args.first().and_then(|it| it.as_string())?;
-    if maybe_command != "@range" {
-        return None;
+pub(crate) fn parse_range(vars: &Vars, args: &[&KdlValue]) -> Result<Array, ScriptingError> {
+    let command = &args[0];
+    let args = args.into_iter().copied().map(Value::from).map(Value::into_dynamic);
+    if let Some(command) = command.as_string().and_then(|i| i.strip_prefix("@")) {
+        let iter = vars.call_func::<Dynamic>(command, args.skip(1).collect())?;
+        Ok(vars.call_func("array", vec![iter])?)
+    } else {
+        Ok(args.collect())
     }
-    let args = &args[1..];
-
-    let args = args
-        .iter()
-        .map(|val| val.as_integer().map(|i| i as i64))
-        .collect::<Option<Vec<i64>>>()?;
-
-    let mut start = 1;
-    let mut step = 1;
-    let end = match args.len() {
-        1 => args[0],
-        2 => {
-            start = args[0];
-            args[1]
-        }
-        3 => {
-            start = args[0];
-            step = args[1]as usize;
-            args[2]
-        }
-        _ => return None,
-    };
-
-    Some((start..=end).step_by(step))
 }

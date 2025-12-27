@@ -29,7 +29,7 @@
 ///
 /// [`KDL`]: https://kdl.dev
 use regex::Regex;
-use std::sync::LazyLock;
+use std::{any::Any, sync::LazyLock};
 
 macro_rules! re {
     ($name:ident, $e:expr) => {
@@ -69,7 +69,7 @@ pub mod utils;
 
 pub use error::Error;
 
-use crate::{error::ScriptingError, expr::Value};
+pub use crate::{error::ScriptingError, expr::Value};
 
 const VOID_TAGS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
@@ -144,8 +144,31 @@ impl<'content> Vars<'content> {
     pub fn new(map: VarMap<'content>) -> Self {
         Self { vars: map.into() }
     }
+    pub fn call_func<'a, 'b: 'a, T: Any>(
+        &self,
+        name: &str,
+        args: Vec<Dynamic>,
+    ) -> Result<T, ScriptingError> {
+        let engine = expr::make_engine();
+        let source = format!("<call {name}>");
+
+        let val = engine
+            .eval_fn_call::<Dynamic>(
+                name,
+                None,
+                args,
+            )
+            .map_err(|e| ScriptingError {
+                message: e.to_string(),
+                source: source.clone(),
+            })?;
+        val.try_cast_result::<T>().map_err(|val| ScriptingError {
+            message: format!("Wrong type:\n{}\n\nExpected:\n{}", val.type_name(), std::any::type_name::<T>()),
+            source,
+        })
+    }
     pub fn eval_expr<'b>(&self, text: &'b str) -> Result<Dynamic, ScriptingError> {
-        let engine = rhai::Engine::new();
+        let engine = expr::make_engine();
 
         let mut scope = self
             .vars
@@ -153,18 +176,13 @@ impl<'content> Vars<'content> {
             .map(|(k, v)| (k.clone(), v.as_owned().into()))
             .collect::<Scope>();
 
-
         match engine.eval_with_scope::<Dynamic>(&mut scope, text) {
             Ok(val) => Ok(val),
-            Err(e) => {
-                Err(ScriptingError {
-                    message:e.to_string(),
-                    source: text.to_owned(),
-                })
-            }
+            Err(e) => Err(ScriptingError {
+                message: e.to_string(),
+                source: text.to_owned(),
+            }),
         }
-
-
     }
     /// Replaces all occurences of variables inside `text` and returns a new string.
     pub fn expand_string<'b>(&self, text: &'b str) -> EmitResult<Text<'b>> {
@@ -177,7 +195,6 @@ impl<'content> Vars<'content> {
                 return Cow::Borrowed("$");
             }
             if let Some(complex) = captures.get(2) {
-
                 let complex = complex.as_str();
                 let val = match self.eval_expr(complex) {
                     Ok(val) => val,
@@ -188,7 +205,11 @@ impl<'content> Vars<'content> {
                 };
                 return Cow::Owned(val.to_string());
             }
-            let var = self.vars.get(capture).map(Value::as_str).unwrap_or_default();
+            let var = self
+                .vars
+                .get(capture)
+                .map(Value::as_str)
+                .unwrap_or_default();
             var
         });
 
@@ -208,7 +229,9 @@ impl<'content> Vars<'content> {
     pub fn expand_value<'b>(&self, value: &'b KdlValue) -> EmitResult<Value<'b>> {
         let val: Value<'b> = Value::from(value);
         Ok(match val {
-            Value::String(content) => Value::String(self.expand_string(&*content)?.into_owned().into()),
+            Value::String(content) => {
+                Value::String(self.expand_string(&*content)?.into_owned().into())
+            }
             val => val,
         })
     }
@@ -218,7 +241,7 @@ impl<'content> Vars<'content> {
     }
 
     /// Inserts a new variable into the node.
-    pub fn insert(&mut self, key: &str, value: impl Into<Value<'content>>) {
+    pub fn insert<'a: 'content>(&mut self, key: &str, value: impl Into<Value<'a>>) {
         self.make_mut().insert(key.into(), value.into());
     }
 
@@ -255,7 +278,7 @@ impl<'content> Vars<'content> {
 impl<'a, S, V> std::iter::Extend<(S, V)> for Vars<'a>
 where
     S: Into<Box<str>>,
-    V: Into<Value<'a>>
+    V: Into<Value<'a>>,
 {
     fn extend<T: IntoIterator<Item = (S, V)>>(&mut self, iter: T) {
         self.make_mut()
@@ -495,7 +518,12 @@ impl<'a> HtmlEmitter<'a> {
     ///
     /// Note that $variables are still expanded.
     pub fn emit_raw_text(&self, indent: &str, content: &KdlValue, writer: Writer) -> EmitResult {
-        write!(writer, "{}{}", indent, &self.vars.expand_value_str(content)?)?;
+        write!(
+            writer,
+            "{}{}",
+            indent,
+            &self.vars.expand_value_str(content)?
+        )?;
         self.write_line(writer)?;
         Ok(())
     }
@@ -530,7 +558,7 @@ impl<'a> HtmlEmitter<'a> {
     /// let mut file = std::fs::File::create("index.html").unwrap();
     /// emitter.emit(&doc, &mut file).unwrap();
     /// ```
-    pub fn emit<'b: 'a>(&mut self, document: &'b KdlDocument, writer: Writer<'b>) -> EmitResult {
+    pub fn emit<'b: 'a, 'c: 'a>(&mut self, document: &'b KdlDocument, writer: Writer<'c>) -> EmitResult {
         for node in document.nodes() {
             let name = node.name().value();
             let indent = self.indent(node);

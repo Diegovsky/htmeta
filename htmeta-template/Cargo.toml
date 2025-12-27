@@ -11,6 +11,7 @@ test_gen = []
 htmeta = { path = "../htmeta" }
 easy-ext = "1.0.2"
 multimap.workspace = true
+rhai.workspace = true
 
 
 [dev-dependencies]

@@ -153,16 +153,16 @@ impl IPlugin for TemplatePlugin {
 
                 args.reverse();
 
-                let iter: Box<dyn Iterator<Item = _>> = if let Some(iter) = parse_range(&*args) {
-                    Box::new(iter.map(|i| KdlValue::Integer(i as _)).map(Cow::Owned))
-                } else {
-                    Box::new(args.into_iter().map(Cow::Borrowed))
-                };
+                if args.is_empty() {
+                    return Err(err("for: missing values after `in`"));
+                }
+
+                let iter = parse_range(&context.emitter.vars, &*args)?;
 
                 for value in iter {
                     let mut emit = context.emitter.clone();
-                    emit.vars.insert(name, emit.vars.expand_value_str(&*value)?);
-                    emit.emit(children, context.writer)?;
+                    emit.vars.insert(name, value);
+                    emit.emit(children, *context.writer)?;
                 }
             }
 

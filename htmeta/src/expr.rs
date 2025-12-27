@@ -4,6 +4,8 @@ use kdl::KdlValue;
 use rhai::Dynamic;
 
 use crate::{Text};
+mod builtins;
+pub use builtins::make_engine;
 
 /// Possible values a variable can have.
 #[derive(Debug, Clone)]
@@ -40,13 +42,30 @@ impl<'a> Value<'a> {
             Value::Other(i) => Cow::Owned(i.to_string())
         }
     }
+
+    pub fn into_dynamic(self) -> Dynamic {
+        match self {
+            Value::String(st) => Dynamic::from(st.clone().into_owned()),
+            Value::Other(i) => Dynamic::from(i)
+        }
+    }
+
+    pub fn as_dynamic(&self) -> Dynamic {
+        self.clone().into_dynamic()
+    }
 }
 
 impl<'a> From<Value<'a>> for Dynamic {
     fn from(value: Value<'a>) -> Self {
-        match value {
-            Value::String(st) => Self::from(st.clone().into_owned()),
-            Value::Other(i) => Self::from(i)
+        value.into_dynamic()
+    }
+}
+
+impl From<Dynamic> for Value<'static> {
+    fn from(value: Dynamic) -> Self {
+        match value.try_cast_result::<String>() {
+            Ok(it) => Self::String(Cow::Owned(it)),
+            Err(value) => Self::Other(value),
         }
     }
 }

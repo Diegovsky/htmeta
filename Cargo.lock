@@ -427,6 +427,7 @@ dependencies = [
  "htmeta",
  "htmeta-auto-test",
  "multimap",
+ "rhai",
 ]
 
 [[package]]
