@@ -8,6 +8,7 @@ fn lorem(count: INT) -> String {
         .cycle()
         .enumerate()
         .take(count)
+                // ensure line breaks happen after sentence ends and it ends with a dot
         .flat_map(|(i, w)| if w.ends_with(".") && (i >= nexti || i == count-1 ){
             nexti += 40;
             vec![w, "\n<br>\n"]
