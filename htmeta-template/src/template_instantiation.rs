@@ -1,17 +1,11 @@
 use crate::{CHILDREN, Template, TemplatePlugin, find, for_each_mut};
 
-use std::{
-    borrow::Cow,
-    cell::{RefCell, RefMut},
-    collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+use std::borrow::Cow;
 
 use htmeta::{
     EmitResult, HtmlEmitter,
-    kdl::{KdlDocument, KdlEntry, KdlIdentifier, KdlNode, KdlValue},
-    plugins::{EmitStatus, IPlugin, PluginContext},
+    kdl::{KdlIdentifier, KdlNode},
+    plugins::PluginContext,
 };
 
 use crate::utils::*;

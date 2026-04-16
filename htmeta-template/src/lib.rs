@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     cell::{RefCell, RefMut},
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -8,7 +7,7 @@ use std::{
 
 use htmeta::{
     EmitResult, HtmlEmitter,
-    kdl::{KdlDocument, KdlEntry, KdlIdentifier, KdlNode, KdlValue},
+    kdl::{KdlDocument, KdlEntry, KdlNode, KdlValue},
     plugins::{EmitStatus, IPlugin, PluginContext},
     utils::NilWriter,
 };
@@ -103,7 +102,7 @@ impl TemplatePlugin {
     pub fn used_files(&self) -> Vec<Rc<PathBuf>> {
         self.file_dep_graph.borrow().keys().cloned().collect()
     }
-    fn add_path(&self, filename: Rc<PathBuf>) -> RefMut<HashSet<Rc<PathBuf>>> {
+    fn add_path(&self, filename: Rc<PathBuf>) -> RefMut<'_, HashSet<Rc<PathBuf>>> {
         RefMut::map(self.file_dep_graph.borrow_mut(), |it| {
             it.entry(filename).or_default()
         })

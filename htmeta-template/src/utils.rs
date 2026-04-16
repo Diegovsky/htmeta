@@ -59,7 +59,7 @@ pub impl KdlNode {
     //         .filter_map(|e| Some((e.name()?.value(), e.value())))
     // }
 
-    fn keyed_entries(&self) -> impl Iterator<Item = (Key, &KdlValue)> + DoubleEndedIterator {
+    fn keyed_entries(&self) -> impl Iterator<Item = (Key<'_>, &KdlValue)> + DoubleEndedIterator {
         let mut current_index = 0;
         self.entries().iter().map(move |entry| match entry.name() {
             Some(key) => (Key::Prop(key.value()), entry.value()),

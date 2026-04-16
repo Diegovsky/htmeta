@@ -9,7 +9,6 @@ use std::{
     io::{BufWriter, Read, Write},
     path::{Path, PathBuf},
     rc::Rc,
-    time::{Duration, Instant},
 };
 
 mod watcher;
