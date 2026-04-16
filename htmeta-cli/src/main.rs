@@ -1,11 +1,15 @@
-use htmeta::{kdl, HtmlEmitter, HtmlEmitterBuilder};
+use htmeta::{HtmlEmitter, HtmlEmitterBuilder, kdl};
 use htmeta_template::TemplatePlugin;
 use kdl::KdlDocument;
 use lexopt::Parser;
-use miette::{bail, Context, Diagnostic, IntoDiagnostic};
+use miette::{Context, Diagnostic, IntoDiagnostic, bail};
 use notify::Watcher;
 use std::{
-    ffi::OsString, io::{BufWriter, Read, Write}, path::{Path, PathBuf}, rc::Rc, time::{Duration, Instant}
+    ffi::OsString,
+    io::{BufWriter, Read, Write},
+    path::{Path, PathBuf},
+    rc::Rc,
+    time::{Duration, Instant},
 };
 
 mod watcher;
@@ -57,7 +61,7 @@ impl Args {
                 Long("minify") | Short('m') => drop(builder.minify()),
                 Long("tab-size") | Short('t') => drop(builder.indent(parser.value()?.parse()?)),
                 Long("document-formatting") | Short('D') => drop(builder.follow_original_indent()),
-                Long("watch") | Short('w') => {watch = true},
+                Long("watch") | Short('w') => watch = true,
                 Value(value) if input_filename.is_none() => {
                     input_filename = Some(PathBuf::from(value))
                 }
@@ -112,12 +116,18 @@ fn compile(args: &Args) -> miette::Result<Vec<Rc<PathBuf>>> {
     let mut emitter = builder.build(input_filename.clone());
 
     // Dump to stdio
-    let mut file: &mut dyn Write = if uses_stdin || output_filename.map(|o| o == Path::new("-")).unwrap_or(false) {
+    let mut file: &mut dyn Write = if uses_stdin
+        || output_filename
+            .map(|o| o == Path::new("-"))
+            .unwrap_or(false)
+    {
         &mut std::io::stdout()
     // Write to file
     } else {
         let file = std::fs::File::create(
-            output_filename.cloned().unwrap_or_else(|| input_filename.with_extension("html")),
+            output_filename
+                .cloned()
+                .unwrap_or_else(|| input_filename.with_extension("html")),
         )
         .into_diagnostic()?;
         &mut BufWriter::new(file)
@@ -126,15 +136,14 @@ fn compile(args: &Args) -> miette::Result<Vec<Rc<PathBuf>>> {
     emitter.emit(&doc, &mut file).into_diagnostic()?;
     let tmpl = emitter.plugins[0].get_plugin::<TemplatePlugin>().unwrap();
     Ok(tmpl.used_files())
-
 }
 
 fn watcher(args: Args) -> miette::Result<()> {
-    if args.input_filename == Path::new("-"){
+    if args.input_filename == Path::new("-") {
         bail!("Can't watch over stdin!");
     }
     let mut watcher = watcher::Watcher::new();
-    let do_compile = |watcher: &mut watcher::Watcher|->miette::Result<()> {
+    let do_compile = |watcher: &mut watcher::Watcher| -> miette::Result<()> {
         match compile(&args) {
             Err(e) => {
                 eprintln!("Compilation failed.\n{e}");
@@ -148,7 +157,7 @@ fn watcher(args: Args) -> miette::Result<()> {
                 // ensure current file is always watched
                 watcher.add_file(args.input_filename.clone()).unwrap();
                 Ok(())
-            },
+            }
         }
     };
     do_compile(&mut watcher)?;
@@ -177,8 +186,12 @@ fn main() -> miette::Result<()> {
     let args = Args::parse(args).map_err(|cause| CliError { exename, cause })?;
 
     match args.watch {
-        true => { watcher(args)?; },
-        false => { compile(&args)?; },
+        true => {
+            watcher(args)?;
+        }
+        false => {
+            compile(&args)?;
+        }
     }
 
     Ok(())

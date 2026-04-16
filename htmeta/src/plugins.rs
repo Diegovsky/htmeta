@@ -42,7 +42,6 @@ impl Plugin {
         let it = &*self.0 as &dyn Any;
         it.downcast_ref::<T>()
     }
-
 }
 
 impl std::ops::Deref for Plugin {

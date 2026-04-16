@@ -194,8 +194,8 @@ impl IPlugin for TemplatePlugin {
                     context.emitter.filename.clone().unwrap_or_default();
 
                 let current_dirname = current_filename.parent().unwrap_or(Path::new("."));
-                let filename =
-                    current_dirname.join(context.emitter.vars.expand_string(include_path)?.as_ref());
+                let filename = current_dirname
+                    .join(context.emitter.vars.expand_string(include_path)?.as_ref());
                 if !filename.exists() {
                     return Err(format!(
                         "Failed to find file '{}'. Original file: {:?}",

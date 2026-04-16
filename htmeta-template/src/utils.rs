@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use htmeta::{
-    kdl::{KdlDocument, KdlNode, KdlValue},
     Error,
+    kdl::{KdlDocument, KdlNode, KdlValue},
 };
 
 use easy_ext::ext;

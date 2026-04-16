@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use kdl::KdlValue;
 use rhai::Dynamic;
 
-use crate::{Text};
+use crate::Text;
 mod builtins;
 pub use builtins::make_engine;
 
@@ -39,14 +39,14 @@ impl<'a> Value<'a> {
     pub fn as_str(&self) -> Text<'a> {
         match self {
             Value::String(cow) => cow.clone(),
-            Value::Other(i) => Cow::Owned(i.to_string())
+            Value::Other(i) => Cow::Owned(i.to_string()),
         }
     }
 
     pub fn into_dynamic(self) -> Dynamic {
         match self {
             Value::String(st) => Dynamic::from(st.clone().into_owned()),
-            Value::Other(i) => Dynamic::from(i)
+            Value::Other(i) => Dynamic::from(i),
         }
     }
 

@@ -153,17 +153,17 @@ impl<'content> Vars<'content> {
         let source = format!("<call {name}>");
 
         let val = engine
-            .eval_fn_call::<Dynamic>(
-                name,
-                None,
-                args,
-            )
+            .eval_fn_call::<Dynamic>(name, None, args)
             .map_err(|e| ScriptingError {
                 message: e.to_string(),
                 source: source.clone(),
             })?;
         val.try_cast_result::<T>().map_err(|val| ScriptingError {
-            message: format!("Wrong type:\n{}\n\nExpected:\n{}", val.type_name(), std::any::type_name::<T>()),
+            message: format!(
+                "Wrong type:\n{}\n\nExpected:\n{}",
+                val.type_name(),
+                std::any::type_name::<T>()
+            ),
             source,
         })
     }
@@ -558,7 +558,11 @@ impl<'a> HtmlEmitter<'a> {
     /// let mut file = std::fs::File::create("index.html").unwrap();
     /// emitter.emit(&doc, &mut file).unwrap();
     /// ```
-    pub fn emit<'b: 'a, 'c: 'a>(&mut self, document: &'b KdlDocument, writer: Writer<'c>) -> EmitResult {
+    pub fn emit<'b: 'a, 'c: 'a>(
+        &mut self,
+        document: &'b KdlDocument,
+        writer: Writer<'c>,
+    ) -> EmitResult {
         for node in document.nodes() {
             let name = node.name().value();
             let indent = self.indent(node);

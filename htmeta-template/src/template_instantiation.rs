@@ -49,29 +49,26 @@ fn set_variables<'a, 'b>(
                 key.to_owned(),
                 context.emitter.vars.expand_value(val)?.as_owned(),
             ))
-    }).collect::<EmitResult<Vec<_>>>()?;
-    subemitter
-        .vars
-        .extend(default_params);
+        })
+        .collect::<EmitResult<Vec<_>>>()?;
+    subemitter.vars.extend(default_params);
 
     // Turns named entries into variables with the corresponding name
     // (E.g: `arg="value"` => `$arg "value"`)
     //
     // And positional arguments into numbered variables
     // (E.g: `"foo" entry="zoo" "bar"` => `$0 "foo"; $entry "zoo"; $1 "bar"`)
-    let args =
-        instantiation_information
-            .keyed_entries()
-            .map(|(key, value)| {
-                Ok((
-                    Cow::<str>::from(key),
-                    // value.clone()
-                    context.emitter.vars.expand_value_str(value)?,
-                ))
-            }).collect::<EmitResult<Vec<_>>>()?;
-    subemitter.vars.extend(
-        args
-    );
+    let args = instantiation_information
+        .keyed_entries()
+        .map(|(key, value)| {
+            Ok((
+                Cow::<str>::from(key),
+                // value.clone()
+                context.emitter.vars.expand_value_str(value)?,
+            ))
+        })
+        .collect::<EmitResult<Vec<_>>>()?;
+    subemitter.vars.extend(args);
 
     // Creates special variable `props` which contains all unused properties.
     let props = instantiation_information
