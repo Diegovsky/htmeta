@@ -16,3 +16,7 @@ FLAGS:
 	-t, --tab-size=[number]
 		Allows you to configure the indentation depth, using space characters.
 		The default value is 4. A value of 0 enables minify mode.
+
+	-w, --watch
+		Watches the documents (and its dependencies) for changes,
+		re-emitting when they do.
